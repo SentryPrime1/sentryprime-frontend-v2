@@ -13,6 +13,7 @@ export default function ScanResults({ scanId, onBack }) {
   const [aiResponse, setAiResponse] = useState(null);
 
   useEffect(() => {
+    console.log('ScanResults received scanId:', scanId);
     let mounted = true;
     const load = async () => {
       setLoading(true);
