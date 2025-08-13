@@ -1,254 +1,169 @@
-// API Configuration
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://sentryprime-backend-clean-production.up.railway.app';
+// src/utils/api.js
 
-// Helper function to get auth token
-const getAuthToken = ( ) => {
-  return localStorage.getItem('sentryprime_token');
-};
+// ---- Base URL ----
+// Use the Vercel/Vite env var first, then fall back to your Node backend on Railway.
+const API_BASE_URL =
+  import.meta.env.VITE_BACKEND_URL ||
+  'https://sentryprime-backend-v2-production.up.railway.app';
 
-// Helper function to make authenticated requests
-const makeRequest = async (endpoint, options = {}) => {
+// ---- Storage Keys ----
+const TOKEN_KEY = 'sentryprime_token';
+const USER_KEY = 'sentryprime_user';
+
+// ---- Auth helpers ----
+const getAuthToken = () => localStorage.getItem(TOKEN_KEY);
+
+// ---- Fetch wrapper ----
+async function makeRequest(endpoint, options = {}) {
   const token = getAuthToken();
   const url = `${API_BASE_URL}${endpoint}`;
-  
-  const config = {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    },
-    ...options,
+
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
   };
 
-  try {
-    const response = await fetch(url, config);
-    
-    // Handle non-JSON responses
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      return { success: true };
-    }
+  const init = { method: 'GET', ...options, headers };
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error || data.message || `HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    return data;
-  } catch (error) {
-    console.error(`API Error (${endpoint}):`, error);
-    throw error;
+  const res = await fetch(url, init);
+  const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+
+  // Parse JSON if present
+  let data;
+  if (contentType.includes('application/json') && text) {
+    try { data = JSON.parse(text); } catch { /* ignore parse error */ }
   }
-};
 
-// Authentication API
+  if (!res.ok) {
+    const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  // If no JSON body, return a simple success object
+  return data === undefined ? { success: true } : data;
+}
+
+// ---- Auth API ----
 export const auth = {
-  // Register new user
   register: async (userData) => {
-    const response = await makeRequest('/api/auth/register', {
+    const resp = await makeRequest('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData),
     });
-    
-    if (response.token) {
-      localStorage.setItem('sentryprime_token', response.token);
-      localStorage.setItem('sentryprime_user', JSON.stringify(response.user));
+    if (resp.token) {
+      localStorage.setItem(TOKEN_KEY, resp.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(resp.user));
     }
-    
-    return response;
+    return resp;
   },
 
-  // Login user
   login: async (credentials) => {
-    const response = await makeRequest('/api/auth/login', {
+    const resp = await makeRequest('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
-    
-    if (response.token) {
-      localStorage.setItem('sentryprime_token', response.token);
-      localStorage.setItem('sentryprime_user', JSON.stringify(response.user));
+    if (resp.token) {
+      localStorage.setItem(TOKEN_KEY, resp.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(resp.user));
     }
-    
-    return response;
+    return resp;
   },
 
-  // Logout user
   logout: () => {
-    localStorage.removeItem('sentryprime_token');
-    localStorage.removeItem('sentryprime_user');
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
   },
 
-  // Check if user is authenticated
-  isAuthenticated: () => {
-    return !!getAuthToken();
-  },
+  isAuthenticated: () => !!getAuthToken(),
 
-  // Get current user from localStorage
   getCurrentUser: () => {
-    const userStr = localStorage.getItem('sentryprime_user');
-    return userStr ? JSON.parse(userStr) : null;
+    const s = localStorage.getItem(USER_KEY);
+    try { return s ? JSON.parse(s) : null; } catch { return null; }
   },
 };
 
-// Dashboard API
+// ---- Dashboard API ----
 export const dashboard = {
-  // Get dashboard statistics
   getStats: async () => {
-    try {
-      const response = await makeRequest('/api/dashboard/stats');
-      return response.overview || {
-        totalWebsites: 0,
-        totalScans: 0,
-        avgCompliance: 0,
-        totalViolations: 0
-      };
-    } catch (error) {
-      console.error('Failed to load dashboard stats:', error);
-      return {
-        totalWebsites: 0,
-        totalScans: 0,
-        avgCompliance: 0,
-        totalViolations: 0
-      };
-    }
+    const r = await makeRequest('/api/dashboard/stats');
+    return r.overview || { totalWebsites: 0, totalScans: 0, avgCompliance: 0, totalViolations: 0 };
   },
 
-  // Get user websites
   getWebsites: async () => {
-    try {
-      const response = await makeRequest('/api/dashboard/websites');
-      return response.websites || [];
-    } catch (error) {
-      console.error('Failed to load websites:', error);
-      return [];
-    }
+    const r = await makeRequest('/api/dashboard/websites');
+    return r.websites || [];
   },
 
-  // Get user scans
   getScans: async () => {
-    try {
-      const response = await makeRequest('/api/dashboard/scans');
-      return response.scans || [];
-    } catch (error) {
-      console.error('Failed to load scans:', error);
-      return [];
-    }
+    const r = await makeRequest('/api/dashboard/scans');
+    return r.scans || [];
   },
 };
 
-// Websites API
+// ---- Websites API (some endpoints may be unused depending on your backend) ----
 export const websites = {
-  // Add new website
-  add: async (websiteData) => {
-    return await makeRequest('/api/dashboard/websites', {
+  add: (websiteData) =>
+    makeRequest('/api/dashboard/websites', {
       method: 'POST',
       body: JSON.stringify(websiteData),
-    });
-  },
+    }),
 
-  // Delete website
-  delete: async (websiteId) => {
-    return await makeRequest(`/api/websites/${websiteId}`, {
-      method: 'DELETE',
-    });
-  },
+  delete: (websiteId) =>
+    makeRequest(`/api/websites/${websiteId}`, { method: 'DELETE' }),
 
-  // Get website details
-  get: async (websiteId) => {
-    return await makeRequest(`/api/websites/${websiteId}`);
-  },
+  get: (websiteId) =>
+    makeRequest(`/api/websites/${websiteId}`),
 
-  // Update website
-  update: async (websiteId, websiteData) => {
-    return await makeRequest(`/api/websites/${websiteId}`, {
+  update: (websiteId, websiteData) =>
+    makeRequest(`/api/websites/${websiteId}`, {
       method: 'PUT',
       body: JSON.stringify(websiteData),
+    }),
+};
+
+// ---- Scanning API ----
+export const scanning = {
+  startScan: async (websiteId, options = {}) => {
+    // Look up URL by id first
+    const sites = await dashboard.getWebsites();
+    const site = sites.find((w) => String(w.id) === String(websiteId));
+    if (!site) throw new Error('Website not found');
+
+    return makeRequest('/api/dashboard/scans', {
+      method: 'POST',
+      body: JSON.stringify({
+        website_id: websiteId,
+        url: site.url,
+        ...options,
+      }),
     });
   },
+
+  getScanResults: (scanId) =>
+    makeRequest(`/api/scans/${scanId}/results`),
+
+  // ✅ FIXED: correct AI endpoint for Node backend
+  getAIAnalysis: ({ url, report }) =>
+    makeRequest('/api/ai/analyze', {
+      method: 'POST',
+      body: JSON.stringify({
+        url,
+        report,
+        violations: report?.results || report?.violations || [],
+      }),
+    }),
+
+  getHistory: (websiteId) =>
+    makeRequest(`/api/websites/${websiteId}/scans`),
 };
 
-// Scanning API
-export const scanning = {
-  // Start a new scan
-  startScan: async (websiteId, options = {}) => {
-    try {
-      // Get the website details first
-      const websites = await dashboard.getWebsites();
-      const website = websites.find(w => w.id === websiteId);
-      
-      if (!website) {
-        throw new Error('Website not found');
-      }
-
-      // Start the scan using the website URL
-      const response = await makeRequest('/api/dashboard/scans', {
-        method: 'POST',
-        body: JSON.stringify({
-          website_id: websiteId,
-          url: website.url,
-          ...options,
-        }),
-      });
-      
-      return response;
-    } catch (error) {
-      console.error('Failed to start scan:', error);
-      throw error;
-    }
-  },
-
-  // Get scan results
-  getScanResults: async (scanId) => {
-    return await makeRequest(`/api/scans/${scanId}/results`);
-  },
-
-  // Get AI analysis for a URL
-  getAIAnalysis: async (url) => {
-    try {
-      const response = await makeRequest('/api/scan/ai-enhanced', {
-        method: 'POST',
-        body: JSON.stringify({ url }),
-      });
-      
-      return response;
-    } catch (error) {
-      console.error('Failed to get AI analysis:', error);
-      throw error;
-    }
-  },
-
-  // Get scan history
-  getHistory: async (websiteId) => {
-    return await makeRequest(`/api/websites/${websiteId}/scans`);
-  },
-};
-
-// Health check API
+// ---- Health ----
 export const health = {
-  // Check backend health
-  check: async () => {
-    try {
-      const response = await makeRequest('/');
-      return response;
-    } catch (error) {
-      console.error('Health check failed:', error);
-      throw error;
-    }
-  },
+  check: () => makeRequest('/'),
 };
 
-// Export default API object
-const api = {
-  auth,
-  dashboard,
-  websites,
-  scanning,
-  health,
-};
-
+// Default export
+const api = { auth, dashboard, websites, scanning, health };
 export default api;
