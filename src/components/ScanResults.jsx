@@ -1,339 +1,234 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  Info, 
-  ExternalLink, 
-  Brain, 
-  Code, 
-  Eye,
-  BarChart3,
-  Calendar,
-  Globe,
-  ArrowLeft
-} from 'lucide-react';
+// src/components/ScanResults.jsx
+import React, { useEffect, useMemo, useState } from 'react';
+import api from '../utils/api';
 
-function ScanResults({ scan, onViewAIAnalysis }) {
-  const [selectedViolation, setSelectedViolation] = useState(null);
-  const [showCode, setShowCode] = useState(false);
+export default function ScanResults({ scanId, onBack }) {
+  const [loading, setLoading] = useState(true);
+  const [violations, setViolations] = useState([]);
+  const [scanMeta, setScanMeta] = useState(null);
+  const [error, setError] = useState('');
+  const [q, setQ] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiResponse, setAiResponse] = useState(null);
 
-  // Mock scan results data (in real app, this would come from the scan)
-  const mockViolations = [
-    {
-      id: 1,
-      type: 'Missing Alt Text',
-      severity: 'critical',
-      impact: 'serious',
-      description: 'Images must have alternate text',
-      help: 'All img elements must have an alt attribute',
-      helpUrl: 'https://dequeuniversity.com/rules/axe/4.4/image-alt',
-      element: '<img src="/hero-image.jpg" class="w-full h-96 object-cover">',
-      selector: 'img.w-full.h-96',
-      context: 'Hero section image on homepage',
-      wcagLevel: 'AA',
-      wcagCriteria: '1.1.1 Non-text Content'
-    },
-    {
-      id: 2,
-      type: 'Low Color Contrast',
-      severity: 'moderate',
-      impact: 'serious',
-      description: 'Text and background colors must have sufficient contrast',
-      help: 'Elements must have sufficient color contrast',
-      helpUrl: 'https://dequeuniversity.com/rules/axe/4.4/color-contrast',
-      element: '<p class="text-gray-400 bg-gray-300">Contact us for more information</p>',
-      selector: 'p.text-gray-400',
-      context: 'Footer contact information',
-      wcagLevel: 'AA',
-      wcagCriteria: '1.4.3 Contrast (Minimum )'
-    },
-    {
-      id: 3,
-      type: 'Missing Form Labels',
-      severity: 'critical',
-      impact: 'critical',
-      description: 'Form elements must have labels',
-      help: 'Every form element must have a programmatically associated label',
-      helpUrl: 'https://dequeuniversity.com/rules/axe/4.4/label',
-      element: '<input type="email" placeholder="Enter your email" class="form-input">',
-      selector: 'input[type="email"]',
-      context: 'Newsletter signup form',
-      wcagLevel: 'A',
-      wcagCriteria: '1.3.1 Info and Relationships'
-    }
-  ];
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await api.scanning.getScanResults(scanId);
+        if (!mounted) return;
 
-  const getSeverityColor = (severity ) => {
-    switch (severity) {
-      case 'critical': return 'text-red-600 bg-red-100 border-red-200';
-      case 'serious': return 'text-orange-600 bg-orange-100 border-orange-200';
-      case 'moderate': return 'text-yellow-600 bg-yellow-100 border-yellow-200';
-      case 'minor': return 'text-blue-600 bg-blue-100 border-blue-200';
-      default: return 'text-gray-600 bg-gray-100 border-gray-200';
-    }
-  };
+        // res should be normalized to { violations: [] }
+        setViolations(res.violations || []);
+        setScanMeta({
+          url: res.url || res.pageUrl || res.targetUrl || '',
+          timestamp: res.timestamp || res.scan_date || res.createdAt || '',
+          totals: {
+            violations: (res.violations && res.violations.length) || 0,
+          },
+        });
+      } catch (err) {
+        console.error(err);
+        if (mounted) setError(err.message || 'Failed to load results');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, [scanId]);
 
-  const getSeverityIcon = (severity) => {
-    switch (severity) {
-      case 'critical': return AlertTriangle;
-      case 'serious': return AlertTriangle;
-      case 'moderate': return Info;
-      case 'minor': return Info;
-      default: return Info;
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return violations;
+    return violations.filter((v) => {
+      const fields = [
+        v.id,
+        v.impact,
+        v.help,
+        v.description,
+        v.helpUrl,
+        ...(v?.nodes || []).flatMap((n) => [
+          n.html,
+          n.target?.join(' '),
+          n.failureSummary
+        ]),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return fields.includes(needle);
+    });
+  }, [violations, q]);
+
+  const runAI = async () => {
+    setAiLoading(true);
+    setAiError('');
+    setAiResponse(null);
+    try {
+      const resp = await api.scanning.getAIAnalysis(scanId);
+      setAiResponse(resp);
+    } catch (e) {
+      setAiError(e.message || 'AI analysis failed');
+    } finally {
+      setAiLoading(false);
     }
   };
-
-  if (!scan) {
-    return (
-      <div className="space-y-6">
-        <div className="text-center py-12">
-          <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No scan selected</h3>
-          <p className="text-gray-600">
-            Select a website and run a scan to view detailed results here
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Scan Results</h2>
-          <p className="text-gray-600 mt-1">Detailed accessibility analysis</p>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 text-sm"
+          >
+            ← Back
+          </button>
+        )}
+        <h2 className="text-xl font-semibold">Scan Results</h2>
+      </div>
+
+      {scanMeta && (
+        <div className="text-sm text-gray-600">
+          <div><span className="font-medium">URL:</span> {scanMeta.url || 'Unknown'}</div>
+          <div><span className="font-medium">When:</span> {scanMeta.timestamp ? new Date(scanMeta.timestamp).toLocaleString() : 'Unknown'}</div>
+          <div><span className="font-medium">Total Violations:</span> {violations.length}</div>
         </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="Filter by rule, impact, selector…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="w-full px-3 py-2 border rounded-md"
+        />
         <button
-          onClick={() => onViewAIAnalysis(scan)}
-          className="btn-primary flex items-center space-x-2"
+          onClick={runAI}
+          disabled={aiLoading}
+          className="px-3 py-2 rounded-md bg-black text-white text-sm disabled:opacity-50"
         >
-          <Brain className="h-4 w-4" />
-          <span>AI Analysis</span>
+          {aiLoading ? 'Analyzing…' : 'AI Analysis'}
         </button>
       </div>
 
-      {/* Scan Overview */}
-      <div className="card">
-        <div className="card-content">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="flex items-center space-x-3">
-              <Globe className="h-8 w-8 text-blue-600" />
-              <div>
-                <p className="text-sm text-gray-500">Website</p>
-                <p className="font-medium text-gray-900">{scan.website_name || scan.url}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-              <Calendar className="h-8 w-8 text-green-600" />
-              <div>
-                <p className="text-sm text-gray-500">Scan Date</p>
-                <p className="font-medium text-gray-900">
-                  {scan.scan_date ? new Date(scan.scan_date).toLocaleDateString() : 'Unknown'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-              <BarChart3 className="h-8 w-8 text-purple-600" />
-              <div>
-                <p className="text-sm text-gray-500">Compliance Score</p>
-                <p className={`font-medium text-2xl ${
-                  scan.compliance_score >= 80 ? 'text-green-600' : 
-                  scan.compliance_score >= 60 ? 'text-yellow-600' : 'text-red-600'
-                }`}>
-                  {scan.compliance_score || 0}%
-                </p>
-              </div>
-            </div>
-          </div>
+      {aiError && (
+        <div className="p-3 border border-red-300 text-red-700 rounded-md text-sm">
+          {aiError}
         </div>
-      </div>
+      )}
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card">
-          <div className="card-content text-center">
-            <div className="text-2xl font-bold text-red-600">{mockViolations.filter(v => v.severity === 'critical').length}</div>
-            <div className="text-sm text-gray-600">Critical Issues</div>
-          </div>
-        </div>
-        
-        <div className="card">
-          <div className="card-content text-center">
-            <div className="text-2xl font-bold text-orange-600">{mockViolations.filter(v => v.severity === 'serious').length}</div>
-            <div className="text-sm text-gray-600">Serious Issues</div>
-          </div>
-        </div>
-        
-        <div className="card">
-          <div className="card-content text-center">
-            <div className="text-2xl font-bold text-yellow-600">{mockViolations.filter(v => v.severity === 'moderate').length}</div>
-            <div className="text-sm text-gray-600">Moderate Issues</div>
-          </div>
-        </div>
-        
-        <div className="card">
-          <div className="card-content text-center">
-            <div className="text-2xl font-bold text-gray-600">{mockViolations.length}</div>
-            <div className="text-sm text-gray-600">Total Issues</div>
-          </div>
-        </div>
-      </div>
+      {aiResponse && (
+        <div className="p-4 border rounded-md bg-gray-50">
+          <h3 className="font-semibold mb-2">AI Guidance</h3>
 
-      {/* Violations List */}
-      <div className="card">
-        <div className="card-header">
-          <h3 className="text-lg font-medium text-gray-900">Accessibility Violations</h3>
+          {/* Try to render nicely if the shape is recognizable, otherwise show raw JSON */}
+          {Array.isArray(aiResponse?.prioritized_fixes) ? (
+            <div className="space-y-2">
+              <div className="text-sm text-gray-700">{aiResponse.summary || ''}</div>
+              <div>
+                <div className="font-medium mb-1">Top Fixes:</div>
+                <ul className="list-disc pl-6">
+                  {aiResponse.prioritized_fixes.map((item, idx) => (
+                    <li key={idx} className="text-sm">{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <pre className="text-xs overflow-x-auto">
+              {JSON.stringify(aiResponse, null, 2)}
+            </pre>
+          )}
         </div>
-        <div className="card-content">
-          <div className="space-y-4">
-            {mockViolations.map((violation) => {
-              const SeverityIcon = getSeverityIcon(violation.severity);
-              
-              return (
-                <div key={violation.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3 flex-1">
-                      <div className={`p-2 rounded-lg border ${getSeverityColor(violation.severity)}`}>
-                        <SeverityIcon className="h-5 w-5" />
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <h4 className="font-medium text-gray-900">{violation.type}</h4>
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getSeverityColor(violation.severity)}`}>
-                            {violation.severity}
-                          </span>
-                        </div>
-                        
-                        <p className="text-sm text-gray-600 mb-2">{violation.description}</p>
-                        
-                        <div className="flex items-center space-x-4 text-xs text-gray-500">
-                          <span>WCAG {violation.wcagLevel}</span>
-                          <span>{violation.wcagCriteria}</span>
-                          <span>Impact: {violation.impact}</span>
-                        </div>
-                        
-                        <div className="mt-2">
-                          <p className="text-sm text-gray-600">
-                            <strong>Context:</strong> {violation.context}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2 ml-4">
-                      <button
-                        onClick={() => setSelectedViolation(violation)}
-                        className="btn-outline text-xs"
-                      >
-                        <Eye className="h-3 w-3 mr-1" />
-                        Details
-                      </button>
-                      
+      )}
+
+      {loading && (
+        <div className="text-sm text-gray-600">Loading results…</div>
+      )}
+
+      {error && !loading && (
+        <div className="p-3 border border-red-300 text-red-700 rounded-md text-sm">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="border rounded-md overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="text-left p-2">Rule</th>
+                <th className="text-left p-2">Impact</th>
+                <th className="text-left p-2">Help</th>
+                <th className="text-left p-2">Nodes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="p-3 text-center text-gray-500">
+                    No violations match your filter.
+                  </td>
+                </tr>
+              )}
+              {filtered.map((v, i) => (
+                <tr key={`${v.id}-${i}`} className="border-t">
+                  <td className="align-top p-2">
+                    <div className="font-medium">{v.id}</div>
+                    <div className="text-xs text-gray-500">{v.description}</div>
+                    {v.helpUrl && (
                       <a
-                        href={violation.helpUrl}
+                        href={v.helpUrl}
                         target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-outline text-xs"
+                        rel="noreferrer"
+                        className="text-xs text-blue-600 underline"
                       >
-                        <ExternalLink className="h-3 w-3 mr-1" />
-                        Learn More
+                        Learn more
                       </a>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Violation Detail Modal */}
-      {selectedViolation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">{selectedViolation.type}</h3>
-                <button
-                  onClick={() => setSelectedViolation(null)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  ×
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Description</h4>
-                  <p className="text-gray-600">{selectedViolation.description}</p>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">How to Fix</h4>
-                  <p className="text-gray-600">{selectedViolation.help}</p>
-                </div>
-                
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900">Element Code</h4>
-                    <button
-                      onClick={() => setShowCode(!showCode)}
-                      className="btn-outline text-xs"
-                    >
-                      <Code className="h-3 w-3 mr-1" />
-                      {showCode ? 'Hide' : 'Show'} Code
-                    </button>
-                  </div>
-                  
-                  {showCode && (
-                    <div className="bg-gray-100 rounded-md p-3">
-                      <code className="text-sm text-gray-800 break-all">
-                        {selectedViolation.element}
-                      </code>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium text-gray-900">Selector:</span>
-                    <p className="text-gray-600">{selectedViolation.selector}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-900">WCAG Criteria:</span>
-                    <p className="text-gray-600">{selectedViolation.wcagCriteria}</p>
-                  </div>
-                </div>
-                
-                <div className="flex space-x-3 pt-4">
-                  <a
-                    href={selectedViolation.helpUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-primary flex items-center space-x-2"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    <span>Learn More</span>
-                  </a>
-                  <button
-                    onClick={() => setSelectedViolation(null)}
-                    className="btn-secondary"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+                    )}
+                  </td>
+                  <td className="align-top p-2">
+                    <span className="inline-block px-2 py-1 rounded bg-gray-100">
+                      {v.impact || 'n/a'}
+                    </span>
+                  </td>
+                  <td className="align-top p-2">{v.help}</td>
+                  <td className="align-top p-2">
+                    <ul className="space-y-2">
+                      {(v.nodes || []).map((n, ni) => (
+                        <li key={ni} className="p-2 rounded border bg-white">
+                          {n.target && (
+                            <div className="text-xs text-gray-600 break-all">
+                              <span className="font-medium">Target:</span>{' '}
+                              {Array.isArray(n.target) ? n.target.join(', ') : n.target}
+                            </div>
+                          )}
+                          {n.html && (
+                            <pre className="mt-1 text-xs overflow-x-auto bg-gray-50 p-2 rounded">
+                              {n.html}
+                            </pre>
+                          )}
+                          {n.failureSummary && (
+                            <div className="mt-1 text-xs">
+                              <span className="font-medium">Why:</span> {n.failureSummary}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 }
-
-export default ScanResults;
