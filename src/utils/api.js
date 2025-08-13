@@ -16,17 +16,26 @@ const getAuthToken = ( ) => localStorage.getItem(TOKEN_KEY);
 // ---- Fetch wrapper ----
 async function makeRequest(endpoint, options = {}) {
   const token = getAuthToken();
-  const url = `${API_BASE_URL}${endpoint}`;
 
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(options.headers || {}),
+  // Normalize base and endpoint
+  const base = (API_BASE_URL || '').replace(/\/+$/, ''); // remove trailing slashes
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${base}${path}`;
+
+  const config = {
+    method: options.method || 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+    ...options,
   };
 
-  const init = { method: 'GET', ...options, headers };
+  // Helpful debug line (keep for now)
+  console.debug('API fetch →', url, config);
 
-  const res = await fetch(url, init);
+  const res = await fetch(url, config);
   const contentType = res.headers.get('content-type') || '';
   const text = await res.text();
 
@@ -102,7 +111,7 @@ export const dashboard = {
   },
 };
 
-// ---- Websites API (some endpoints may be unused depending on your backend) ----
+// ---- Websites API ----
 export const websites = {
   add: (websiteData) =>
     makeRequest('/api/dashboard/websites', {
@@ -141,11 +150,9 @@ export const scanning = {
     });
   },
 
-  // ✅ FIXED: Robust scan results fetching with fallbacks
+  // Get scan results (full violations)
   getScanResults: async (scanId) => {
-    // Helper to normalize different backend shapes to { violations: [] }
     const normalize = (raw) => {
-      if (!raw) return { violations: [] };
       const v =
         raw?.results?.violations ||
         raw?.violations ||
@@ -153,34 +160,21 @@ export const scanning = {
       return { ...raw, violations: Array.isArray(v) ? v : [] };
     };
 
-    // Try primary endpoint
     try {
       const data = await makeRequest(`/api/scans/${scanId}/results`);
       return normalize(data);
-    } catch (e1) {
-      // Fallback to alternate endpoint
-      try {
-        const data = await makeRequest(`/api/scans/${scanId}`);
-        return normalize(data);
-      } catch (e2) {
-        console.error('Failed to load scan results:', e1, e2);
-        return { violations: [] };
-      }
+    } catch (e) {
+      // Fallback to summary route if results not present
+      const data = await makeRequest(`/api/scans/${scanId}`);
+      return normalize(data);
     }
   },
 
-  // ✅ FIXED: Correct AI endpoint with scan_id parameter
   getAIAnalysis: async (scanId) => {
-    try {
-      const response = await makeRequest('/api/ai/analyze', {
-        method: 'POST',
-        body: JSON.stringify({ scan_id: scanId }),
-      });
-      return response;
-    } catch (error) {
-      console.error('Failed to get AI analysis:', error);
-      throw error;
-    }
+    return await makeRequest('/api/ai/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ scan_id: scanId }),
+    });
   },
 
   getHistory: (websiteId) =>
