@@ -315,10 +315,13 @@ function Dashboard({ user, onLogout }) {
           />
         )}
 
-        {activeTab === 'results' && (
-          <ScanResults 
-            scan={selectedScan}
-            onViewAIAnalysis={handleViewAIAnalysis}
+        {activeTab === 'results' && selectedScan && (
+  <ScanResults 
+    scanId={selectedScan.id}
+    onBack={() => setActiveTab('websites')}
+  />
+)}
+
           />
         )}
       </main>
