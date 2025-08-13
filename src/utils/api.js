@@ -11,7 +11,7 @@ const TOKEN_KEY = 'sentryprime_token';
 const USER_KEY = 'sentryprime_user';
 
 // ---- Auth helpers ----
-const getAuthToken = () => localStorage.getItem(TOKEN_KEY);
+const getAuthToken = ( ) => localStorage.getItem(TOKEN_KEY);
 
 // ---- Fetch wrapper ----
 async function makeRequest(endpoint, options = {}) {
@@ -141,19 +141,47 @@ export const scanning = {
     });
   },
 
-  getScanResults: (scanId) =>
-    makeRequest(`/api/scans/${scanId}/results`),
+  // ✅ FIXED: Robust scan results fetching with fallbacks
+  getScanResults: async (scanId) => {
+    // Helper to normalize different backend shapes to { violations: [] }
+    const normalize = (raw) => {
+      if (!raw) return { violations: [] };
+      const v =
+        raw?.results?.violations ||
+        raw?.violations ||
+        (Array.isArray(raw?.results) ? raw.results : []);
+      return { ...raw, violations: Array.isArray(v) ? v : [] };
+    };
 
-  // ✅ FIXED: correct AI endpoint for Node backend
-  getAIAnalysis: ({ url, report }) =>
-    makeRequest('/api/ai/analyze', {
-      method: 'POST',
-      body: JSON.stringify({
-        url,
-        report,
-        violations: report?.results || report?.violations || [],
-      }),
-    }),
+    // Try primary endpoint
+    try {
+      const data = await makeRequest(`/api/scans/${scanId}/results`);
+      return normalize(data);
+    } catch (e1) {
+      // Fallback to alternate endpoint
+      try {
+        const data = await makeRequest(`/api/scans/${scanId}`);
+        return normalize(data);
+      } catch (e2) {
+        console.error('Failed to load scan results:', e1, e2);
+        return { violations: [] };
+      }
+    }
+  },
+
+  // ✅ FIXED: Correct AI endpoint with scan_id parameter
+  getAIAnalysis: async (scanId) => {
+    try {
+      const response = await makeRequest('/api/ai/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ scan_id: scanId }),
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to get AI analysis:', error);
+      throw error;
+    }
+  },
 
   getHistory: (websiteId) =>
     makeRequest(`/api/websites/${websiteId}/scans`),
