@@ -14,25 +14,52 @@ import {
 } from 'lucide-react';
 import { scanning } from '../utils/api';
 
-function AIAnalysis({ scan, onClose }) {
+function AIAnalysis({ scanId, onClose }) { // ✅ FIXED: Use scanId instead of scan
   const [aiResults, setAiResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedRecommendation, setSelectedRecommendation] = useState(null);
 
   useEffect(() => {
-    if (scan) {
-      loadAIAnalysis();
-    }
-  }, [scan]);
+    if (!scanId) return; // ✅ FIXED: Check scanId instead of scan
+    let cancelled = false;
+
+    const run = async () => {
+      setLoading(true);
+      setError('');
+      for (let i = 0; i < 60; i++) { // ✅ FIXED: Add polling logic
+        try {
+          const res = await scanning.getAIAnalysis(scanId); // ✅ FIXED: Use scanId
+          if (res?.summary || res?.steps || res?.issues) {
+            if (!cancelled) {
+              setAiResults(res);
+              setLoading(false);
+            }
+            return;
+          }
+        } catch (e) {
+          console.log(`AI analysis poll attempt ${i + 1}: ${e.message}`);
+          // If backend returns 'scan_not_ready' or similar, keep polling
+        }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      if (!cancelled) {
+        setError('Timed out waiting for AI analysis');
+        setLoading(false);
+      }
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [scanId]); // ✅ FIXED: Depend on scanId
 
   const loadAIAnalysis = async () => {
     try {
       setLoading(true);
       setError('');
       
-      // Call the AI-enhanced scanning endpoint
-      const response = await scanning.getAIAnalysis(scan.url || scan.website_url);
+      // ✅ FIXED: Use scanId directly
+      const response = await scanning.getAIAnalysis(scanId);
       setAiResults(response);
     } catch (err) {
       setError(err.message || 'Failed to load AI analysis');
@@ -126,7 +153,7 @@ function AIAnalysis({ scan, onClose }) {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">AI-Powered Accessibility Analysis</h2>
-                <p className="text-gray-600">Intelligent recommendations for {scan?.website_name || scan?.url}</p>
+                <p className="text-gray-600">Intelligent recommendations for Scan ID: {scanId}</p> {/* ✅ FIXED: Show scanId */}
               </div>
             </div>
             <button
@@ -173,104 +200,116 @@ function AIAnalysis({ scan, onClose }) {
                   <h3 className="text-lg font-medium text-gray-900">AI Summary</h3>
                 </div>
                 <p className="text-gray-700 leading-relaxed">
-                  I've analyzed your website and found <strong>{mockAIRecommendations.length} accessibility issues</strong> that need attention. 
+                  {aiResults?.summary || `I've analyzed your website and found ${mockAIRecommendations.length} accessibility issues that need attention. 
                   The most critical issues involve missing alt text and form labels, which significantly impact screen reader users. 
-                  I've prioritized these recommendations based on user impact and implementation effort.
+                  I've prioritized these recommendations based on user impact and implementation effort.`}
                 </p>
               </div>
 
-              {/* Recommendations Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {mockAIRecommendations.map((item) => {
-                  const PriorityIcon = getPriorityIcon(item.aiRecommendation.priority);
-                  
-                  return (
-                    <div key={item.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center space-x-3">
-                          <div className={`p-2 rounded-lg border ${getPriorityColor(item.aiRecommendation.priority)}`}>
-                            <PriorityIcon className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-gray-900">{item.violation}</h4>
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getPriorityColor(item.aiRecommendation.priority)}`}>
-                              {item.aiRecommendation.priority} priority
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-right text-sm text-gray-500">
-                          <div className="flex items-center space-x-1">
-                            <Zap className="h-3 w-3" />
-                            <span>{item.aiRecommendation.estimatedTime}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* What it is */}
-                      <div className="mb-4">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <BookOpen className="h-4 w-4 text-blue-600" />
-                          <h5 className="font-medium text-gray-900">What it is</h5>
-                        </div>
-                        <p className="text-sm text-gray-600 leading-relaxed">
-                          {item.aiRecommendation.whatItIs}
-                        </p>
-                      </div>
-
-                      {/* Why it matters */}
-                      <div className="mb-4">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <Target className="h-4 w-4 text-orange-600" />
-                          <h5 className="font-medium text-gray-900">Why it matters</h5>
-                        </div>
-                        <p className="text-sm text-gray-600 leading-relaxed">
-                          {item.aiRecommendation.whyItMatters}
-                        </p>
-                      </div>
-
-                      {/* How to fix */}
-                      <div className="mb-4">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <Lightbulb className="h-4 w-4 text-green-600" />
-                          <h5 className="font-medium text-gray-900">How to fix</h5>
-                        </div>
-                        <p className="text-sm text-gray-600 leading-relaxed mb-3">
-                          {item.aiRecommendation.howToFix}
-                        </p>
-                        
-                        {/* Code Example */}
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <Code className="h-3 w-3 text-gray-600" />
-                            <span className="text-xs font-medium text-gray-700">Code Example</span>
-                          </div>
-                          
-                          <div className="space-y-2">
+              {/* Show real AI results if available, otherwise show mock data */}
+              {aiResults?.steps ? (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium text-gray-900">AI Recommendations</h3>
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <div className="prose max-w-none">
+                      <div className="whitespace-pre-wrap">{aiResults.summary}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Recommendations Grid */
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {mockAIRecommendations.map((item) => {
+                    const PriorityIcon = getPriorityIcon(item.aiRecommendation.priority);
+                    
+                    return (
+                      <div key={item.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center space-x-3">
+                            <div className={`p-2 rounded-lg border ${getPriorityColor(item.aiRecommendation.priority)}`}>
+                              <PriorityIcon className="h-5 w-5" />
+                            </div>
                             <div>
-                              <div className="text-xs text-red-600 font-medium mb-1">❌ Before:</div>
-                              <code className="text-xs bg-red-50 text-red-800 p-2 rounded block overflow-x-auto">
-                                {item.aiRecommendation.codeExample.before}
-                              </code>
+                              <h4 className="font-medium text-gray-900">{item.violation}</h4>
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getPriorityColor(item.aiRecommendation.priority)}`}>
+                                {item.aiRecommendation.priority} priority
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right text-sm text-gray-500">
+                            <div className="flex items-center space-x-1">
+                              <Zap className="h-3 w-3" />
+                              <span>{item.aiRecommendation.estimatedTime}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* What it is */}
+                        <div className="mb-4">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <BookOpen className="h-4 w-4 text-blue-600" />
+                            <h5 className="font-medium text-gray-900">What it is</h5>
+                          </div>
+                          <p className="text-sm text-gray-600 leading-relaxed">
+                            {item.aiRecommendation.whatItIs}
+                          </p>
+                        </div>
+
+                        {/* Why it matters */}
+                        <div className="mb-4">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <Target className="h-4 w-4 text-orange-600" />
+                            <h5 className="font-medium text-gray-900">Why it matters</h5>
+                          </div>
+                          <p className="text-sm text-gray-600 leading-relaxed">
+                            {item.aiRecommendation.whyItMatters}
+                          </p>
+                        </div>
+
+                        {/* How to fix */}
+                        <div className="mb-4">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <Lightbulb className="h-4 w-4 text-green-600" />
+                            <h5 className="font-medium text-gray-900">How to fix</h5>
+                          </div>
+                          <p className="text-sm text-gray-600 leading-relaxed mb-3">
+                            {item.aiRecommendation.howToFix}
+                          </p>
+                          
+                          {/* Code Example */}
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <Code className="h-3 w-3 text-gray-600" />
+                              <span className="text-xs font-medium text-gray-700">Code Example</span>
                             </div>
                             
-                            <div>
-                              <div className="text-xs text-green-600 font-medium mb-1">✅ After:</div>
-                              <code className="text-xs bg-green-50 text-green-800 p-2 rounded block overflow-x-auto">
-                                {item.aiRecommendation.codeExample.after}
-                              </code>
+                            <div className="space-y-2">
+                              <div>
+                                <div className="text-xs text-red-600 font-medium mb-1">❌ Before:</div>
+                                <code className="text-xs bg-red-50 text-red-800 p-2 rounded block overflow-x-auto">
+                                  {item.aiRecommendation.codeExample.before}
+                                </code>
+                              </div>
+                              
+                              <div>
+                                <div className="text-xs text-green-600 font-medium mb-1">✅ After:</div>
+                                <code className="text-xs bg-green-50 text-green-800 p-2 rounded block overflow-x-auto">
+                                  {item.aiRecommendation.codeExample.after}
+                                </code>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* WCAG Reference */}
-                      <div className="text-xs text-gray-500 border-t border-gray-200 pt-3">
-                        <strong>WCAG Reference:</strong> {item.aiRecommendation.wcagReference}
+                        {/* WCAG Reference */}
+                        <div className="text-xs text-gray-500 border-t border-gray-200 pt-3">
+                          <strong>WCAG Reference:</strong> {item.aiRecommendation.wcagReference}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="mt-8 flex justify-center space-x-4">
