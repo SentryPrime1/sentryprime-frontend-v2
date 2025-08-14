@@ -132,54 +132,43 @@ export const websites = {
     }),
 };
 
-// ---- Scanning API ----
+// Scanning API
 export const scanning = {
+  // Start a new scan (uses backend ID)
   startScan: async (websiteId, options = {}) => {
-    // Look up URL by id first
-    const sites = await dashboard.getWebsites();
-    const site = sites.find((w) => String(w.id) === String(websiteId));
-    if (!site) throw new Error('Website not found');
+    // get URL from backend's websites list (keeps a single source of truth)
+    const list = await dashboard.getWebsites();
+    const w = list.find(x => x.id === websiteId);
+    if (!w) throw new Error('Website not found');
 
-    return makeRequest('/api/dashboard/scans', {
+    const res = await makeRequest('/api/dashboard/scans', {
       method: 'POST',
       body: JSON.stringify({
         website_id: websiteId,
-        url: site.url,
+        url: w.url,
         ...options,
       }),
     });
+
+    // IMPORTANT: res.id is the scan id we must use everywhere
+    if (!res?.id) throw new Error('Backend did not return a scan id');
+    return res; // { id, url, status, ... }
   },
 
-  // Get scan results (full violations)
+  // Get scan results
   getScanResults: async (scanId) => {
-    const normalize = (raw) => {
-      const v =
-        raw?.results?.violations ||
-        raw?.violations ||
-        (Array.isArray(raw?.results) ? raw.results : []);
-      return { ...raw, violations: Array.isArray(v) ? v : [] };
-    };
-
-    try {
-      const data = await makeRequest(`/api/scans/${scanId}/results`);
-      return normalize(data);
-    } catch (e) {
-      // Fallback to summary route if results not present
-      const data = await makeRequest(`/api/scans/${scanId}`);
-      return normalize(data);
-    }
+    return await makeRequest(`/api/scans/${scanId}/results`);
   },
 
+  // Get AI analysis for a scan
   getAIAnalysis: async (scanId) => {
     return await makeRequest('/api/ai/analyze', {
       method: 'POST',
       body: JSON.stringify({ scan_id: scanId }),
     });
   },
-
-  getHistory: (websiteId) =>
-    makeRequest(`/api/websites/${websiteId}/scans`),
 };
+
 
 // ---- Health ----
 export const health = {
