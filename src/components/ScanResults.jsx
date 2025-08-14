@@ -12,7 +12,7 @@ import {
   Globe,
   ArrowLeft
 } from 'lucide-react';
-import api from '../utils/api';
+import { scanning } from '../utils/api'; // ✅ FIXED: Use named import
 
 export default function ScanResults({ scanId, onBack }) {
   const [loading, setLoading] = useState(true);
@@ -41,7 +41,7 @@ export default function ScanResults({ scanId, onBack }) {
       // If backend returns 404/202 while running, poll results endpoint
       for (let i = 0; i < 60; i++) { // up to ~2 min
         try {
-          const res = await api.scanning.getScanResults(scanId);
+          const res = await scanning.getScanResults(scanId); // ✅ FIXED: Use named import directly
           if (res && Array.isArray(res.violations)) {
             if (!cancelled) {
               setViolations(res.violations);
