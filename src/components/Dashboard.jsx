@@ -29,7 +29,7 @@ function Dashboard({ user, onLogout }) {
   const [userWebsites, setUserWebsites] = useState([]);
   const [recentScans, setRecentScans] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedScan, setSelectedScan] = useState(null);
+  const [selectedScanId, setSelectedScanId] = useState(null); // ✅ FIXED: Store only scan ID
   const [showAIAnalysis, setShowAIAnalysis] = useState(false);
 
   // Load dashboard data
@@ -48,7 +48,7 @@ function Dashboard({ user, onLogout }) {
       
       setStats(statsData);
       setUserWebsites(websitesData);
-      setRecentScans(scansData);
+      setRecentScans(scansData); // ✅ FIXED: Store full scan list
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -61,16 +61,17 @@ function Dashboard({ user, onLogout }) {
   };
 
   const handleScanStarted = () => {
-    loadDashboardData();
+    loadDashboardData(); // ✅ FIXED: Refresh to get new scan with backend ID
   };
 
   const handleViewScan = (scan) => {
-    setSelectedScan(scan);
+    // ✅ FIXED: Store only scan ID, not full object
+    setSelectedScanId(scan.id);
     setActiveTab('results');
   };
 
   const handleViewAIAnalysis = (scan) => {
-    setSelectedScan(scan);
+    setSelectedScanId(scan.id); // ✅ FIXED: Use scan ID for AI analysis too
     setShowAIAnalysis(true);
   };
 
@@ -265,24 +266,19 @@ function Dashboard({ user, onLogout }) {
                           <div>
                             <p className="font-medium text-gray-900">{scan.website_name}</p>
                             <p className="text-sm text-gray-500">
-                              {new Date(scan.created_at).toLocaleDateString()}
+                              {scan.scan_date ? new Date(scan.scan_date).toLocaleDateString() : 'Unknown date'}
                             </p>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <span className={`badge ${
-                              scan.status === 'completed' ? 'badge-success' : 
-                              scan.status === 'failed' ? 'badge-danger' : 'badge-warning'
-                            }`}>
-                              {scan.status}
+                            <span className="badge badge-success">
+                              {scan.total_violations || 0} issues
                             </span>
-                            {scan.status === 'completed' && (
-                              <button
-                                onClick={() => handleViewScan(scan)}
-                                className="btn-outline text-xs"
-                              >
-                                View
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleViewScan(scan)}
+                              className="btn-outline text-xs"
+                            >
+                              View Results
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -315,21 +311,22 @@ function Dashboard({ user, onLogout }) {
           />
         )}
 
-        {activeTab === 'results' && selectedScan && (
-  <ScanResults 
-    scanId={selectedScan.id}
-    onBack={() => setActiveTab('websites')}
-  />
-)}
-
+        {/* ✅ FIXED: Pass only scanId and proper onBack handler */}
+        {activeTab === 'results' && selectedScanId && (
+          <ScanResults 
+            scanId={selectedScanId}
+            onBack={() => {
+              setSelectedScanId(null);
+              setActiveTab('websites');
+            }}
           />
         )}
       </main>
 
       {/* AI Analysis Modal */}
-      {showAIAnalysis && selectedScan && (
+      {showAIAnalysis && selectedScanId && (
         <AIAnalysis 
-          scan={selectedScan}
+          scanId={selectedScanId}
           onClose={() => setShowAIAnalysis(false)}
         />
       )}
