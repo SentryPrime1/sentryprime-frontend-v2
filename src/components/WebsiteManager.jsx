@@ -179,7 +179,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           placeholder="https://example.com"
           className="flex-1 rounded-md border border-border p-2"
           value={newWebsiteUrl}
-          onChange={(e ) => setNewWebsiteUrl(e.target.value)}
+          onChange={(e  ) => setNewWebsiteUrl(e.target.value)}
           required
         />
         <button
@@ -228,21 +228,24 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
                 
-              {/* View Results button - show if scan has violations */}
-{(site.total_violations > 0 || site.last_scan_id) && !isScanning && (
-  <button
-    onClick={() => handleViewResults(site.last_scan_id)}
-    className={`rounded-md px-3 py-2 flex items-center gap-2 ${
-      isNewlyCompleted 
-        ? 'bg-green-600 text-white hover:bg-green-700 animate-pulse' 
-        : 'border border-green-600 text-green-600 hover:bg-green-50'
-    }`}
-  >
-    <Eye className="h-4 w-4" />
-    {isNewlyCompleted ? 'View Results ✨' : 'View Results'}
-  </button>
-)}
-
+                {/* ✅ UPDATED: View Results button with console logging */}
+                {(site.total_violations > 0 || site.last_scan_id) && !isScanning && (
+                  <button
+                    onClick={() => {
+                      console.log('🔍 Clicking View Results for scan ID:', site.last_scan_id);
+                      console.log('🔍 Full site object:', site);
+                      handleViewResults(site.last_scan_id);
+                    }}
+                    className={`rounded-md px-3 py-2 flex items-center gap-2 ${
+                      isNewlyCompleted 
+                        ? 'bg-green-600 text-white hover:bg-green-700 animate-pulse' 
+                        : 'border border-green-600 text-green-600 hover:bg-green-50'
+                    }`}
+                  >
+                    <Eye className="h-4 w-4" />
+                    {isNewlyCompleted ? 'View Results ✨' : 'View Results'}
+                  </button>
+                )}
               </div>
 
               <div className="text-xs text-gray-500">
