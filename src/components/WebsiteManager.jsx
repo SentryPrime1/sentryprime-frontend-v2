@@ -228,26 +228,21 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
                 
-                {/* Existing View Results button */}
-                {site.last_scan_id && !isNewlyCompleted && (
-                  <button
-                    onClick={() => handleViewResults(site.last_scan_id)}
-                    className="rounded-md border border-green-600 text-green-600 px-3 py-2 hover:bg-green-50"
-                  >
-                    View Results
-                  </button>
-                )}
-                
-                {/* NEW: Newly completed scan button */}
-                {isNewlyCompleted && (
-                  <button
-                    onClick={() => handleViewResults(site.last_scan_id)}
-                    className="rounded-md bg-green-600 text-white px-3 py-2 hover:bg-green-700 flex items-center gap-2 animate-pulse"
-                  >
-                    <Eye className="h-4 w-4" />
-                    View Results ✨
-                  </button>
-                )}
+              {/* View Results button - show if scan has violations */}
+{(site.total_violations > 0 || site.last_scan_id) && !isScanning && (
+  <button
+    onClick={() => handleViewResults(site.last_scan_id)}
+    className={`rounded-md px-3 py-2 flex items-center gap-2 ${
+      isNewlyCompleted 
+        ? 'bg-green-600 text-white hover:bg-green-700 animate-pulse' 
+        : 'border border-green-600 text-green-600 hover:bg-green-50'
+    }`}
+  >
+    <Eye className="h-4 w-4" />
+    {isNewlyCompleted ? 'View Results ✨' : 'View Results'}
+  </button>
+)}
+
               </div>
 
               <div className="text-xs text-gray-500">
