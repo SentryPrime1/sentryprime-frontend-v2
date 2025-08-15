@@ -10,17 +10,20 @@ import {
   BarChart3,
   Calendar,
   Globe,
-  ArrowLeft
+  ArrowLeft,
+  RefreshCw
 } from 'lucide-react';
-import { scanning } from '../utils/api'; // ✅ FIXED: Use named import
+import { scanning, dashboard } from '../utils/api';
 
 export default function ScanResults({ scanId, onBack }) {
   const [loading, setLoading] = useState(true);
-  const [meta, setMeta] = useState(null);        // url, date, totals
+  const [meta, setMeta] = useState(null);
   const [violations, setViolations] = useState([]);
   const [error, setError] = useState('');
   const [selectedViolation, setSelectedViolation] = useState(null);
   const [showCode, setShowCode] = useState(false);
+  const [fallbackScans, setFallbackScans] = useState([]); // ✅ NEW: Store available scans for fallback
+  const [showFallback, setShowFallback] = useState(false); // ✅ NEW: Show fallback scan list
 
   useEffect(() => {
     if (!scanId) return;
@@ -34,14 +37,36 @@ export default function ScanResults({ scanId, onBack }) {
         if (!cancelled) setMeta(r);
       } catch (e) {
         console.error('Failed to fetch scan meta:', e);
+        // Don't set error here, let the main polling handle it
       }
     };
 
     const fetchResultsWithPolling = async () => {
-      // If backend returns 404/202 while running, poll results endpoint
-      for (let i = 0; i < 60; i++) { // up to ~2 min
+      // ✅ FIXED: Detect fallback scan IDs and handle them differently
+      if (scanId.startsWith('fallback-')) {
+        console.log('🔍 Detected fallback scan ID, will show available scans instead');
+        
+        // Try to get available scans for this user
         try {
-          const res = await scanning.getScanResults(scanId); // ✅ FIXED: Use named import directly
+          const scans = await dashboard.getScans();
+          if (!cancelled) {
+            setFallbackScans(scans);
+            setShowFallback(true);
+            setLoading(false);
+          }
+        } catch (e) {
+          if (!cancelled) {
+            setError('Unable to load scan results. Please try running a new scan.');
+            setLoading(false);
+          }
+        }
+        return;
+      }
+
+      // ✅ IMPROVED: Reduced polling attempts and better error handling
+      for (let i = 0; i < 15; i++) { // Reduced from 60 to 15 attempts (30 seconds max)
+        try {
+          const res = await scanning.getScanResults(scanId);
           if (res && Array.isArray(res.violations)) {
             if (!cancelled) {
               setViolations(res.violations);
@@ -51,12 +76,36 @@ export default function ScanResults({ scanId, onBack }) {
           }
         } catch (e) {
           console.log(`Poll attempt ${i + 1}: ${e.message}`);
-          // If 404/scan_not_found/202, just keep polling a bit
+          
+          // ✅ NEW: After several failed attempts, try to show available scans
+          if (i > 5 && e.message.includes('404')) {
+            console.log('🔍 Scan not found after multiple attempts, showing available scans');
+            try {
+              const scans = await dashboard.getScans();
+              if (!cancelled) {
+                setFallbackScans(scans);
+                setShowFallback(true);
+                setLoading(false);
+              }
+            } catch (fallbackError) {
+              // Continue polling if we can't get fallback scans
+            }
+            return;
+          }
         }
         await new Promise(r => setTimeout(r, 2000));
       }
+      
+      // ✅ IMPROVED: Better timeout handling with fallback option
       if (!cancelled) {
-        setError('Timed out waiting for scan results');
+        try {
+          const scans = await dashboard.getScans();
+          setFallbackScans(scans);
+          setShowFallback(true);
+          setError('The requested scan could not be found. Here are your available scans:');
+        } catch (e) {
+          setError('Unable to load scan results. Please try running a new scan.');
+        }
         setLoading(false);
       }
     };
@@ -64,6 +113,7 @@ export default function ScanResults({ scanId, onBack }) {
     const run = async () => {
       setLoading(true);
       setError('');
+      setShowFallback(false);
       try {
         await Promise.all([fetchMeta(), fetchResultsWithPolling()]);
       } catch (e) {
@@ -98,6 +148,19 @@ export default function ScanResults({ scanId, onBack }) {
     }
   };
 
+  // ✅ NEW: Handle scan selection from fallback list
+  const handleSelectScan = (scan) => {
+    console.log('🔍 User selected scan from fallback list:', scan.id);
+    // This will trigger a re-render with the new scan ID
+    window.location.hash = `#scan-${scan.id}`;
+    // Or if you have a proper router, navigate to the scan
+    // For now, we'll just reload the component with the new ID
+    setLoading(true);
+    setError('');
+    setShowFallback(false);
+    // The parent component should handle this by updating the scanId prop
+  };
+
   if (!scanId) {
     return (
       <div className="space-y-6">
@@ -117,9 +180,9 @@ export default function ScanResults({ scanId, onBack }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <button onClick={onBack} className="btn-outline flex items-center space-x-2">
-            <ArrowLeft className="h-4 w-4" />
-            <span>Back</span>
+          <button onClick={onBack} className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
           </button>
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Scan Results</h2>
@@ -136,19 +199,54 @@ export default function ScanResults({ scanId, onBack }) {
         </div>
       )}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
-            <p className="text-red-800 font-medium">Failed to Load Results</p>
+      {/* ✅ NEW: Improved error handling with fallback scan list */}
+      {(error || showFallback) && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2 mb-3">
+            <Info className="h-5 w-5 text-yellow-600" />
+            <p className="text-yellow-800 font-medium">
+              {error || 'Scan not found'}
+            </p>
           </div>
-          <p className="text-red-700 mt-2">{error}</p>
+          
+          {fallbackScans.length > 0 && (
+            <div>
+              <p className="text-yellow-700 mb-3">Available scans:</p>
+              <div className="space-y-2">
+                {fallbackScans.slice(0, 5).map((scan) => (
+                  <div key={scan.id} className="flex items-center justify-between p-3 bg-white rounded border">
+                    <div>
+                      <p className="font-medium text-gray-900">{scan.url}</p>
+                      <p className="text-sm text-gray-500">
+                        {scan.total_violations || 0} violations • 
+                        {scan.compliance_score || 0}% compliance • 
+                        {scan.created_at ? new Date(scan.created_at).toLocaleDateString() : 'Unknown date'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleSelectScan(scan)}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {fallbackScans.length === 0 && (
+            <p className="text-yellow-700">
+              No scans available. Please run a new scan from the Websites tab.
+            </p>
+          )}
         </div>
       )}
 
-      {meta && (
-        <div className="card">
-          <div className="card-content">
+      {meta && !showFallback && (
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="flex items-center space-x-3">
                 <Globe className="h-8 w-8 text-blue-600" />
@@ -180,7 +278,7 @@ export default function ScanResults({ scanId, onBack }) {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && !showFallback && violations.length > 0 && (
         <>
           <div className="text-sm text-gray-600 mb-4">
             {violations.length} accessibility violations found
@@ -191,7 +289,7 @@ export default function ScanResults({ scanId, onBack }) {
               const SeverityIcon = getSeverityIcon(violation.impact);
               
               return (
-                <div key={i} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-3 flex-1">
                       <div className={`p-2 rounded-lg border ${getSeverityColor(violation.impact)}`}>
@@ -243,7 +341,7 @@ export default function ScanResults({ scanId, onBack }) {
                           href={violation.helpUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="btn-outline text-xs"
+                          className="inline-flex items-center px-2 py-1 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
                         >
                           <ExternalLink className="h-3 w-3 mr-1" />
                           Learn More
@@ -265,7 +363,7 @@ export default function ScanResults({ scanId, onBack }) {
 async function fetchScanMeta(scanId) {
   const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://sentryprime-backend-v2-production.up.railway.app'}/api/scans/${scanId}`, {
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('sentryprime_token' )}`
+      'Authorization': `Bearer ${localStorage.getItem('sentryprime_token')}`
     }
   });
   if (res.status === 202) {
