@@ -302,14 +302,13 @@ function Dashboard({ user, onLogout }) {
         )}
 
         {activeTab === 'websites' && (
-          <WebsiteManager 
-            websites={userWebsites}
-            onWebsiteAdded={handleWebsiteAdded}
-            onScanStarted={handleScanStarted}
-            onViewScan={handleViewScan}
-            onViewAIAnalysis={handleViewAIAnalysis}
-          />
-        )}
+  <WebsiteManager 
+    onWebsiteAdded={handleWebsiteAdded}
+    onScanStarted={handleScanStarted}
+    onViewResults={handleViewScan}
+  />
+)}
+
 
         {/* ✅ FIXED: Pass only scanId and proper onBack handler */}
         {activeTab === 'results' && selectedScanId && (
