@@ -65,9 +65,13 @@ function Dashboard({ user, onLogout }) {
     loadDashboardData();
   };
 
+  // ✅ UPDATED: handleViewScan with console logging
   const handleViewScan = (scanId) => {
+    console.log('🎯 Dashboard handleViewScan called with scanId:', scanId);
+    console.log('🎯 Setting selectedScanId to:', scanId);
     setSelectedScanId(scanId);
     setActiveTab('results');
+    console.log('🎯 Switched to results tab');
   };
 
   const handleViewAIAnalysis = (scanId) => {
@@ -233,7 +237,7 @@ function Dashboard({ user, onLogout }) {
           />
         )}
 
-        {/* ✅ FIXED: Scan Results Tab with relaxed button condition */}
+        {/* Scan Results Tab */}
         {activeTab === 'scan-results' && (
           <div className="px-4 py-6 sm:px-0">
             <div className="bg-white shadow rounded-lg">
@@ -266,7 +270,6 @@ function Dashboard({ user, onLogout }) {
                             </div>
                           </div>
                           <div className="flex items-center space-x-2">
-                            {/* ✅ FIXED: Show buttons if scan has violations (meaning it's completed) */}
                             {(scan.status === 'completed' || scan.status === 'done' || scan.total_violations > 0) && (
                               <>
                                 <button
