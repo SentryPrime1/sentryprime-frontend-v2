@@ -34,7 +34,6 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     setAdding(true);
     setError('');
     try {
-      // ✅ this calls the helper you already have: websites.add(...)
       await websites.add({ url: newWebsiteUrl.trim() });
       setNewWebsiteUrl('');
       await loadWebsites();
@@ -50,15 +49,11 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     setError('');
     setScanningIds(prev => new Set(prev).add(site.id));
     try {
-      // Start the scan and get the scan object back from the backend
       const scan = await scanning.startScan(site.id);
-      console.log('Scan created with ID:', scan.id); // ← keep for sanity checks
-
-      // Optionally notify parent to refresh dashboard lists
+      console.log('Scan created with ID:', scan.id);
       onScanStarted && onScanStarted(scan);
-
-      // If you want to jump straight to results:
-      // onViewResults && onViewResults(scan.id);
+      // Refresh the website list to show updated scan info
+      await loadWebsites();
     } catch (e) {
       setError(e.message || 'Failed to start scan');
     } finally {
@@ -84,7 +79,6 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         </div>
       )}
 
-      {/* Add website */}
       <form onSubmit={handleAddWebsite} className="flex gap-2">
         <input
           type="url"
@@ -103,14 +97,13 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         </button>
       </form>
 
-      {/* Website list */}
       <div className="grid gap-4 md:grid-cols-2">
         {list.map((site) => (
           <div key={site.id} className="rounded-lg border p-4">
             <div className="mb-2 font-medium">{site.name || site.url}</div>
             <div className="mb-3 text-sm text-gray-600">{site.url}</div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mb-3">
               <button
                 onClick={() => handleScan(site)}
                 disabled={scanningIds.has(site.id)}
@@ -118,18 +111,19 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
               >
                 {scanningIds.has(site.id) ? 'Scanning…' : 'Scan Now'}
               </button>
-              {/* Optional: a View Results button that appears if site has last scan id */}
+              
+              {/* ✅ NEW: View Results button */}
               {site.last_scan_id && (
                 <button
                   onClick={() => onViewResults && onViewResults(site.last_scan_id)}
-                  className="rounded-md border px-3 py-2"
+                  className="rounded-md border border-green-600 text-green-600 px-3 py-2 hover:bg-green-50"
                 >
                   View Results
                 </button>
               )}
             </div>
 
-            <div className="mt-3 text-xs text-gray-500">
+            <div className="text-xs text-gray-500">
               Compliance: {site.compliance_score ?? 0}% • Violations: {site.total_violations ?? 0} • Last Scan:{' '}
               {site.last_scan_date ? new Date(site.last_scan_date).toLocaleString() : 'Never'}
             </div>
