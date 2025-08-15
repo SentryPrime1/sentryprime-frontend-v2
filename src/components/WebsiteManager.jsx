@@ -10,7 +10,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const [newWebsiteUrl, setNewWebsiteUrl] = useState('');
   const [scanningIds, setScanningIds] = useState(new Set());
   const [scanProgress, setScanProgress] = useState({}); // Track progress for each scan
-  const [completedScans, setCompletedScans] = useState(new Set()); // Track newly completed scans
+  const [completedScans, setCompletedScans] = useState(new Map()); // Track newly completed scans with their IDs
   const [error, setError] = useState('');
 
   const loadWebsites = async () => {
@@ -65,8 +65,13 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         
         if (results && results.violations && results.violations.length > 0) {
           // Scan completed successfully
+          console.log('✅ Scan completed! Storing scan ID:', scanId, 'for site:', siteId);
+          
           setScanProgress(prev => ({ ...prev, [siteId]: 100 }));
-          setCompletedScans(prev => new Set(prev).add(scanId));
+          
+          // ✅ FIXED: Store the completed scan ID for this site
+          setCompletedScans(prev => new Map(prev).set(siteId, scanId));
+          
           setScanningIds(prev => {
             const next = new Set(prev);
             next.delete(siteId);
@@ -121,9 +126,11 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     setError('');
     setScanningIds(prev => new Set(prev).add(site.id));
     setScanProgress(prev => ({ ...prev, [site.id]: 0 }));
+    
+    // Clear any previous completion status for this site
     setCompletedScans(prev => {
-      const next = new Set(prev);
-      next.delete(site.last_scan_id); // Remove any previous completion status
+      const next = new Map(prev);
+      next.delete(site.id);
       return next;
     });
     
@@ -151,11 +158,21 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   };
 
   const handleViewResults = (scanId) => {
+    console.log('🔍 handleViewResults called with scanId:', scanId);
+    
+    // Clear completion status after viewing
     setCompletedScans(prev => {
-      const next = new Set(prev);
-      next.delete(scanId); // Remove completion status after viewing
+      const next = new Map(prev);
+      // Remove any entries that have this scanId as value
+      for (const [siteId, storedScanId] of next.entries()) {
+        if (storedScanId === scanId) {
+          next.delete(siteId);
+          break;
+        }
+      }
       return next;
     });
+    
     onViewResults && onViewResults(scanId);
   };
 
@@ -179,7 +196,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           placeholder="https://example.com"
           className="flex-1 rounded-md border border-border p-2"
           value={newWebsiteUrl}
-          onChange={(e  ) => setNewWebsiteUrl(e.target.value)}
+          onChange={(e) => setNewWebsiteUrl(e.target.value)}
           required
         />
         <button
@@ -195,7 +212,10 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         {list.map((site) => {
           const isScanning = scanningIds.has(site.id);
           const progress = scanProgress[site.id] || 0;
-          const isNewlyCompleted = completedScans.has(site.last_scan_id);
+          
+          // ✅ FIXED: Get scan ID from either completed scans or site data
+          const availableScanId = completedScans.get(site.id) || site.last_scan_id;
+          const isNewlyCompleted = completedScans.has(site.id);
           
           return (
             <div key={site.id} className="rounded-lg border p-4">
@@ -228,13 +248,15 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
                 
-                {/* ✅ UPDATED: View Results button with console logging */}
-                {(site.total_violations > 0 || site.last_scan_id) && !isScanning && (
+                {/* ✅ FIXED: View Results button with proper scan ID */}
+                {availableScanId && !isScanning && (
                   <button
                     onClick={() => {
-                      console.log('🔍 Clicking View Results for scan ID:', site.last_scan_id);
-                      console.log('🔍 Full site object:', site);
-                      handleViewResults(site.last_scan_id);
+                      console.log('🔍 Clicking View Results for scan ID:', availableScanId);
+                      console.log('🔍 Site ID:', site.id);
+                      console.log('🔍 Site last_scan_id:', site.last_scan_id);
+                      console.log('🔍 Completed scan ID:', completedScans.get(site.id));
+                      handleViewResults(availableScanId);
                     }}
                     className={`rounded-md px-3 py-2 flex items-center gap-2 ${
                       isNewlyCompleted 
