@@ -1,237 +1,141 @@
-import React, { useState } from 'react';
-import { 
-  Globe, 
-  Plus, 
-  Scan, 
-  Eye, 
-  Brain,
-  Loader,
-  Calendar,
-  BarChart3
-} from 'lucide-react';
-import { websites, scanning } from '../utils/api';
+// src/components/WebsiteManager.jsx
+import React, { useEffect, useState } from 'react';
+import { dashboard, websites, scanning } from '../utils/api';
 
-function WebsiteManager({ 
-  websites: userWebsites, 
-  onWebsiteAdded, 
-  onScanStarted, 
-  onViewScan, 
-  onViewAIAnalysis 
-}) {
-  const [showAddForm, setShowAddForm] = useState(false);
+export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewResults }) {
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
   const [newWebsiteUrl, setNewWebsiteUrl] = useState('');
-  const [addingWebsite, setAddingWebsite] = useState(false);
-  const [scanningWebsites, setScanningWebsites] = useState(new Set());
+  const [scanningIds, setScanningIds] = useState(new Set());
+  const [error, setError] = useState('');
 
-  const handleStartScan = async (website) => {
-    setScanningWebsites(prev => new Set(prev).add(website.id));
+  const loadWebsites = async () => {
+    setError('');
     try {
-      const scanResult = await scanning.startScan(website.id, {
-        // you can add options like { maxPages: 10 } if your backend supports them
-      });
-
-      console.log('Scan created with ID:', scanResult.id);
-      // Tell the parent (Dashboard) to reload stats/websites/scans
-      if (typeof onScanStarted === 'function') onScanStarted();
-
-      // Optional: show quick confirmation
-      alert(`Scan started successfully! Scan ID: ${scanResult.id}`);
-    } catch (err) {
-      console.error('Scan start error:', err);
-      alert('Failed to start scan: ' + err.message);
+      setLoading(true);
+      const items = await dashboard.getWebsites();
+      setList(items);
+    } catch (e) {
+      setError(e.message || 'Failed to load websites');
     } finally {
-      setScanningWebsites(prev => {
-        const s = new Set(prev);
-        s.delete(website.id);
-        return s;
-      });
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadWebsites();
+  }, []);
 
   const handleAddWebsite = async (e) => {
     e.preventDefault();
     if (!newWebsiteUrl.trim()) return;
 
-    setAddingWebsite(true);
+    setAdding(true);
+    setError('');
     try {
-      await websites.addWebsite(newWebsiteUrl.trim());
+      // ✅ this calls the helper you already have: websites.add(...)
+      await websites.add({ url: newWebsiteUrl.trim() });
       setNewWebsiteUrl('');
-      setShowAddForm(false);
-      onWebsiteAdded();
-    } catch (err) {
-      alert('Failed to add website: ' + err.message);
+      await loadWebsites();
+      onWebsiteAdded && onWebsiteAdded();
+    } catch (e) {
+      setError(e.message || 'Failed to add website');
     } finally {
-      setAddingWebsite(false);
+      setAdding(false);
     }
   };
 
+  const handleScan = async (site) => {
+    setError('');
+    setScanningIds(prev => new Set(prev).add(site.id));
+    try {
+      // Start the scan and get the scan object back from the backend
+      const scan = await scanning.startScan(site.id);
+      console.log('Scan created with ID:', scan.id); // ← keep for sanity checks
+
+      // Optionally notify parent to refresh dashboard lists
+      onScanStarted && onScanStarted(scan);
+
+      // If you want to jump straight to results:
+      // onViewResults && onViewResults(scan.id);
+    } catch (e) {
+      setError(e.message || 'Failed to start scan');
+    } finally {
+      setScanningIds(prev => {
+        const next = new Set(prev);
+        next.delete(site.id);
+        return next;
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-4 text-sm text-gray-600">Loading websites…</div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Website Management</h2>
-          <p className="text-gray-600 mt-1">Add websites and run accessibility scans</p>
-        </div>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="btn-primary flex items-center space-x-2"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add Website</span>
-        </button>
-      </div>
-
-      {/* Add Website Form */}
-      {showAddForm && (
-        <div className="card">
-          <div className="card-header">
-            <h3 className="text-lg font-medium text-gray-900">Add New Website</h3>
-          </div>
-          <div className="card-content">
-            <form onSubmit={handleAddWebsite} className="space-y-4">
-              <div>
-                <label htmlFor="website-url" className="block text-sm font-medium text-gray-700 mb-2">
-                  Website URL
-                </label>
-                <input
-                  type="url"
-                  id="website-url"
-                  value={newWebsiteUrl}
-                  onChange={(e) => setNewWebsiteUrl(e.target.value)}
-                  placeholder="https://example.com"
-                  className="input-field"
-                  required
-                />
-              </div>
-              <div className="flex space-x-3">
-                <button
-                  type="submit"
-                  disabled={addingWebsite}
-                  className="btn-primary flex items-center space-x-2"
-                >
-                  {addingWebsite ? (
-                    <Loader className="h-4 w-4 animate-spin" />
-                   ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  <span>{addingWebsite ? 'Adding...' : 'Add Website'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setNewWebsiteUrl('');
-                  }}
-                  className="btn-outline"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
+      {error && (
+        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          {error}
         </div>
       )}
 
-      {/* Websites List */}
-      <div className="card">
-        <div className="card-header">
-          <h3 className="text-lg font-medium text-gray-900">Your Websites</h3>
-        </div>
-        <div className="card-content">
-          {userWebsites.length > 0 ? (
-            <div className="space-y-4">
-              {userWebsites.map((website) => (
-                <div key={website.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Globe className="h-5 w-5 text-gray-400" />
-                      <div>
-                        <h4 className="font-medium text-gray-900">{website.name || website.url}</h4>
-                        <p className="text-sm text-gray-500">{website.url}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      {website.last_scan_date && (
-                        <div className="text-right text-sm text-gray-500">
-                          <div className="flex items-center space-x-1">
-                            <Calendar className="h-3 w-3" />
-                            <span>Last scan: {new Date(website.last_scan_date).toLocaleDateString()}</span>
-                          </div>
-                          {website.compliance_score !== null && (
-                            <div className="flex items-center space-x-1 mt-1">
-                              <BarChart3 className="h-3 w-3" />
-                              <span className={`font-medium ${
-                                website.compliance_score >= 80 ? 'text-green-600' : 
-                                website.compliance_score >= 60 ? 'text-yellow-600' : 'text-red-600'
-                              }`}>
-                                {website.compliance_score}% compliant
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleStartScan(website)}
-                          disabled={scanningWebsites.has(website.id)}
-                          className="btn-primary text-sm flex items-center space-x-1"
-                        >
-                          {scanningWebsites.has(website.id) ? (
-                            <Loader className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Scan className="h-3 w-3" />
-                          )}
-                          <span>{scanningWebsites.has(website.id) ? 'Scanning...' : 'Scan Now'}</span>
-                        </button>
-                        
-                        {website.last_scan_date && (
-                          <>
-                            <button
-                              onClick={() => onViewScan(website)}
-                              className="btn-outline text-sm flex items-center space-x-1"
-                            >
-                              <Eye className="h-3 w-3" />
-                              <span>View Results</span>
-                            </button>
-                            
-                            <button
-                              onClick={() => onViewAIAnalysis(website)}
-                              className="btn-outline text-sm flex items-center space-x-1"
-                            >
-                              <Brain className="h-3 w-3" />
-                              <span>AI Analysis</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <Globe className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No websites added yet</h3>
-              <p className="text-gray-600 mb-4">
-                Add your first website to start monitoring accessibility compliance
-              </p>
+      {/* Add website */}
+      <form onSubmit={handleAddWebsite} className="flex gap-2">
+        <input
+          type="url"
+          placeholder="https://example.com"
+          className="flex-1 rounded-md border border-border p-2"
+          value={newWebsiteUrl}
+          onChange={(e ) => setNewWebsiteUrl(e.target.value)}
+          required
+        />
+        <button
+          type="submit"
+          disabled={adding}
+          className="rounded-md bg-black px-4 py-2 text-white disabled:opacity-60"
+        >
+          {adding ? 'Adding…' : 'Add Website'}
+        </button>
+      </form>
+
+      {/* Website list */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {list.map((site) => (
+          <div key={site.id} className="rounded-lg border p-4">
+            <div className="mb-2 font-medium">{site.name || site.url}</div>
+            <div className="mb-3 text-sm text-gray-600">{site.url}</div>
+
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowAddForm(true)}
-                className="btn-primary flex items-center space-x-2 mx-auto"
+                onClick={() => handleScan(site)}
+                disabled={scanningIds.has(site.id)}
+                className="rounded-md bg-blue-600 px-3 py-2 text-white disabled:opacity-60"
               >
-                <Plus className="h-4 w-4" />
-                <span>Add Your First Website</span>
+                {scanningIds.has(site.id) ? 'Scanning…' : 'Scan Now'}
               </button>
+              {/* Optional: a View Results button that appears if site has last scan id */}
+              {site.last_scan_id && (
+                <button
+                  onClick={() => onViewResults && onViewResults(site.last_scan_id)}
+                  className="rounded-md border px-3 py-2"
+                >
+                  View Results
+                </button>
+              )}
             </div>
-          )}
-        </div>
+
+            <div className="mt-3 text-xs text-gray-500">
+              Compliance: {site.compliance_score ?? 0}% • Violations: {site.total_violations ?? 0} • Last Scan:{' '}
+              {site.last_scan_date ? new Date(site.last_scan_date).toLocaleString() : 'Never'}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
-
-export default WebsiteManager;
