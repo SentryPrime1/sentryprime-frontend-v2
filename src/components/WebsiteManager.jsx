@@ -69,7 +69,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           
           setScanProgress(prev => ({ ...prev, [siteId]: 100 }));
           
-          // ✅ FIXED: Store the completed scan ID for this site
+          // Store the completed scan ID for this site
           setCompletedScans(prev => new Map(prev).set(siteId, scanId));
           
           setScanningIds(prev => {
@@ -212,10 +212,16 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         {list.map((site) => {
           const isScanning = scanningIds.has(site.id);
           const progress = scanProgress[site.id] || 0;
-          
-          // ✅ FIXED: Get scan ID from either completed scans or site data
-          const availableScanId = completedScans.get(site.id) || site.last_scan_id;
           const isNewlyCompleted = completedScans.has(site.id);
+          
+          // ✅ FIXED: More permissive button visibility logic
+          // Show button if site has violations OR a scan ID OR is newly completed
+          const hasResults = (site.total_violations && site.total_violations > 0) || 
+                           site.last_scan_id || 
+                           isNewlyCompleted;
+          
+          // Get the best available scan ID for the button
+          const scanIdToUse = completedScans.get(site.id) || site.last_scan_id;
           
           return (
             <div key={site.id} className="rounded-lg border p-4">
@@ -248,15 +254,18 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
                 
-                {/* ✅ FIXED: View Results button with proper scan ID */}
-                {availableScanId && !isScanning && (
+                {/* ✅ FIXED: Show button if there are results, even without perfect scan ID */}
+                {hasResults && !isScanning && (
                   <button
                     onClick={() => {
-                      console.log('🔍 Clicking View Results for scan ID:', availableScanId);
+                      // Use the best available scan ID, or create a fallback
+                      const idToUse = scanIdToUse || `fallback-${site.id}`;
+                      console.log('🔍 Clicking View Results for scan ID:', idToUse);
                       console.log('🔍 Site ID:', site.id);
                       console.log('🔍 Site last_scan_id:', site.last_scan_id);
+                      console.log('🔍 Site violations:', site.total_violations);
                       console.log('🔍 Completed scan ID:', completedScans.get(site.id));
-                      handleViewResults(availableScanId);
+                      handleViewResults(idToUse);
                     }}
                     className={`rounded-md px-3 py-2 flex items-center gap-2 ${
                       isNewlyCompleted 
