@@ -233,7 +233,7 @@ function Dashboard({ user, onLogout }) {
           />
         )}
 
-        {/* ✅ NEW: Scan Results Tab */}
+        {/* ✅ FIXED: Scan Results Tab with relaxed button condition */}
         {activeTab === 'scan-results' && (
           <div className="px-4 py-6 sm:px-0">
             <div className="bg-white shadow rounded-lg">
@@ -248,13 +248,13 @@ function Dashboard({ user, onLogout }) {
                             <div className="flex items-center space-x-3">
                               <h4 className="text-sm font-medium text-gray-900">{scan.url}</h4>
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                scan.status === 'completed' 
+                                scan.status === 'completed' || scan.status === 'done'
                                   ? 'bg-green-100 text-green-800' 
                                   : scan.status === 'running'
                                   ? 'bg-yellow-100 text-yellow-800'
                                   : 'bg-gray-100 text-gray-800'
                               }`}>
-                                {scan.status}
+                                {scan.status || 'completed'}
                               </span>
                             </div>
                             <div className="mt-1 text-sm text-gray-500">
@@ -266,7 +266,8 @@ function Dashboard({ user, onLogout }) {
                             </div>
                           </div>
                           <div className="flex items-center space-x-2">
-                            {scan.status === 'completed' && (
+                            {/* ✅ FIXED: Show buttons if scan has violations (meaning it's completed) */}
+                            {(scan.status === 'completed' || scan.status === 'done' || scan.total_violations > 0) && (
                               <>
                                 <button
                                   onClick={() => handleViewScan(scan.id)}
