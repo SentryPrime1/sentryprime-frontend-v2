@@ -11,7 +11,8 @@ import {
   Scan,
   Brain,
   TrendingUp,
-  Users
+  Users,
+  Eye
 } from 'lucide-react';
 import { dashboard, websites, scanning } from '../utils/api';
 import WebsiteManager from './WebsiteManager';
@@ -29,7 +30,7 @@ function Dashboard({ user, onLogout }) {
   const [userWebsites, setUserWebsites] = useState([]);
   const [recentScans, setRecentScans] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedScanId, setSelectedScanId] = useState(null); // ✅ FIXED: Store only scan ID
+  const [selectedScanId, setSelectedScanId] = useState(null);
   const [showAIAnalysis, setShowAIAnalysis] = useState(false);
 
   // Load dashboard data
@@ -48,7 +49,7 @@ function Dashboard({ user, onLogout }) {
       
       setStats(statsData);
       setUserWebsites(websitesData);
-      setRecentScans(scansData); // ✅ FIXED: Store full scan list
+      setRecentScans(scansData);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -61,32 +62,25 @@ function Dashboard({ user, onLogout }) {
   };
 
   const handleScanStarted = () => {
-    loadDashboardData(); // ✅ FIXED: Refresh to get new scan with backend ID
+    loadDashboardData();
   };
 
-  const handleViewScan = (scan) => {
-    // ✅ FIXED: Store only scan ID, not full object
-    setSelectedScanId(scan.id);
+  const handleViewScan = (scanId) => {
+    setSelectedScanId(scanId);
     setActiveTab('results');
   };
 
-  const handleViewAIAnalysis = (scan) => {
-    setSelectedScanId(scan.id); // ✅ FIXED: Use scan ID for AI analysis too
+  const handleViewAIAnalysis = (scanId) => {
+    setSelectedScanId(scanId);
     setShowAIAnalysis(true);
   };
-
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: BarChart3 },
-    { id: 'websites', label: 'Websites', icon: Globe },
-    { id: 'results', label: 'Scan Results', icon: Scan },
-  ];
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -95,21 +89,18 @@ function Dashboard({ user, onLogout }) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
+      <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <Shield className="h-8 w-8 text-primary-600" />
-              <span className="ml-2 text-xl font-bold text-gray-900">SentryPrime</span>
+            <div className="flex items-center space-x-3">
+              <Shield className="h-8 w-8 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-900">SentryPrime</h1>
             </div>
-            
             <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-600">
-                Welcome, <span className="font-medium">{user.firstName}</span>
-              </div>
+              <span className="text-sm text-gray-600">Welcome, {user?.name || 'User'}</span>
               <button
                 onClick={onLogout}
-                className="btn-outline flex items-center space-x-2"
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
               >
                 <LogOut className="h-4 w-4" />
                 <span>Logout</span>
@@ -119,204 +110,213 @@ function Dashboard({ user, onLogout }) {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <nav className="bg-white border-b border-gray-200">
+      {/* Navigation */}
+      <nav className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex space-x-8">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === tab.id
-                      ? 'border-primary-500 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4 inline mr-2" />
+              Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('websites')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'websites'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Globe className="h-4 w-4 inline mr-2" />
+              Websites
+            </button>
+            <button
+              onClick={() => setActiveTab('scan-results')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'scan-results'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Scan className="h-4 w-4 inline mr-2" />
+              Scan Results
+            </button>
           </div>
         </div>
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {/* Overview Tab */}
         {activeTab === 'overview' && (
-          <div className="space-y-8">
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="card">
-                <div className="card-content">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="bg-white overflow-hidden shadow rounded-lg">
+                <div className="p-5">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      <Globe className="h-8 w-8 text-blue-600" />
+                      <Globe className="h-6 w-6 text-gray-400" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-500">Total Websites</p>
-                      <p className="text-2xl font-semibold text-gray-900">{stats.totalWebsites}</p>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">Total Websites</dt>
+                        <dd className="text-lg font-medium text-gray-900">{stats.totalWebsites}</dd>
+                      </dl>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="card">
-                <div className="card-content">
+              <div className="bg-white overflow-hidden shadow rounded-lg">
+                <div className="p-5">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      <Scan className="h-8 w-8 text-green-600" />
+                      <Scan className="h-6 w-6 text-gray-400" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-500">Total Scans</p>
-                      <p className="text-2xl font-semibold text-gray-900">{stats.totalScans}</p>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">Total Scans</dt>
+                        <dd className="text-lg font-medium text-gray-900">{stats.totalScans}</dd>
+                      </dl>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="card">
-                <div className="card-content">
+              <div className="bg-white overflow-hidden shadow rounded-lg">
+                <div className="p-5">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      <TrendingUp className="h-8 w-8 text-purple-600" />
+                      <CheckCircle className="h-6 w-6 text-green-400" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-500">Avg Compliance</p>
-                      <p className="text-2xl font-semibold text-gray-900">{stats.avgCompliance}%</p>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">Avg Compliance</dt>
+                        <dd className="text-lg font-medium text-gray-900">{stats.avgCompliance}%</dd>
+                      </dl>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="card">
-                <div className="card-content">
+              <div className="bg-white overflow-hidden shadow rounded-lg">
+                <div className="p-5">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      <AlertTriangle className="h-8 w-8 text-red-600" />
+                      <AlertTriangle className="h-6 w-6 text-red-400" />
                     </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-500">Total Issues</p>
-                      <p className="text-2xl font-semibold text-gray-900">{stats.totalViolations}</p>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">Total Violations</dt>
+                        <dd className="text-lg font-medium text-gray-900">{stats.totalViolations}</dd>
+                      </dl>
                     </div>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Activity */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Recent Websites */}
-              <div className="card">
-                <div className="card-header">
-                  <h3 className="text-lg font-medium text-gray-900">Recent Websites</h3>
-                </div>
-                <div className="card-content">
-                  {userWebsites.length > 0 ? (
-                    <div className="space-y-3">
-                      {userWebsites.slice(0, 5).map((website) => (
-                        <div key={website.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <p className="font-medium text-gray-900">{website.name || website.url}</p>
-                            <p className="text-sm text-gray-500">{website.url}</p>
-                          </div>
-                          <div className="text-right">
-                            {website.compliance_score !== null ? (
-                              <span className={`badge ${
-                                website.compliance_score >= 80 ? 'badge-success' : 
-                                website.compliance_score >= 60 ? 'badge-warning' : 'badge-danger'
-                              }`}>
-                                {website.compliance_score}%
-                              </span>
-                            ) : (
-                              <span className="text-sm text-gray-400">Not scanned</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-6">
-                      <Globe className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">No websites added yet</p>
-                      <button
-                        onClick={() => setActiveTab('websites')}
-                        className="btn-primary mt-2"
-                      >
-                        Add Your First Website
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Recent Scans */}
-              <div className="card">
-                <div className="card-header">
-                  <h3 className="text-lg font-medium text-gray-900">Recent Scans</h3>
-                </div>
-                <div className="card-content">
-                  {recentScans.length > 0 ? (
-                    <div className="space-y-3">
-                      {recentScans.slice(0, 5).map((scan) => (
-                        <div key={scan.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <p className="font-medium text-gray-900">{scan.website_name}</p>
-                            <p className="text-sm text-gray-500">
-                              {scan.scan_date ? new Date(scan.scan_date).toLocaleDateString() : 'Unknown date'}
-                            </p>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <span className="badge badge-success">
-                              {scan.total_violations || 0} issues
-                            </span>
-                            <button
-                              onClick={() => handleViewScan(scan)}
-                              className="btn-outline text-xs"
-                            >
-                              View Results
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-6">
-                      <Scan className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500">No scans performed yet</p>
-                      <button
-                        onClick={() => setActiveTab('websites')}
-                        className="btn-primary mt-2"
-                      >
-                        Start Your First Scan
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* Websites Tab */}
         {activeTab === 'websites' && (
-  <WebsiteManager 
-    onWebsiteAdded={handleWebsiteAdded}
-    onScanStarted={handleScanStarted}
-    onViewResults={handleViewScan}
-  />
-)}
+          <WebsiteManager 
+            onWebsiteAdded={handleWebsiteAdded}
+            onScanStarted={handleScanStarted}
+            onViewResults={handleViewScan}
+          />
+        )}
 
+        {/* ✅ NEW: Scan Results Tab */}
+        {activeTab === 'scan-results' && (
+          <div className="px-4 py-6 sm:px-0">
+            <div className="bg-white shadow rounded-lg">
+              <div className="px-4 py-5 sm:p-6">
+                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Recent Scan Results</h3>
+                {recentScans.length > 0 ? (
+                  <div className="space-y-4">
+                    {recentScans.map((scan) => (
+                      <div key={scan.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3">
+                              <h4 className="text-sm font-medium text-gray-900">{scan.url}</h4>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                scan.status === 'completed' 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : scan.status === 'running'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {scan.status}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-sm text-gray-500">
+                              <span>Compliance: {scan.compliance_score || 0}%</span>
+                              <span className="mx-2">•</span>
+                              <span>Violations: {scan.total_violations || 0}</span>
+                              <span className="mx-2">•</span>
+                              <span>Scanned: {scan.created_at ? new Date(scan.created_at).toLocaleString() : 'Unknown'}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            {scan.status === 'completed' && (
+                              <>
+                                <button
+                                  onClick={() => handleViewScan(scan.id)}
+                                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                >
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  View Results
+                                </button>
+                                <button
+                                  onClick={() => handleViewAIAnalysis(scan.id)}
+                                  className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                                >
+                                  <Brain className="h-4 w-4 mr-1" />
+                                  AI Analysis
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Scan className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No scan results yet</h3>
+                    <p className="text-gray-600 mb-4">
+                      Start scanning your websites to see detailed accessibility reports here
+                    </p>
+                    <button
+                      onClick={() => setActiveTab('websites')}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Website & Scan
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* ✅ FIXED: Pass only scanId and proper onBack handler */}
+        {/* Scan Results Detail View */}
         {activeTab === 'results' && selectedScanId && (
           <ScanResults 
             scanId={selectedScanId}
             onBack={() => {
               setSelectedScanId(null);
-              setActiveTab('websites');
+              setActiveTab('scan-results');
             }}
           />
         )}
