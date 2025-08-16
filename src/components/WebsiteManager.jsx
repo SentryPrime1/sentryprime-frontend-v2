@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { dashboard, websites, scanning } from '../utils/api';
 import { Eye, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 
@@ -11,14 +11,34 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const [scanProgress, setScanProgress] = useState(new Map());
   const [error, setError] = useState('');
 
-  const loadWebsites = async () => {
-    console.log('🔄 DEBUG: loadWebsites called');
+  // Use refs to persist scanning state across re-renders and loadWebsites calls
+  const scanningRef = useRef(new Set());
+  const progressRef = useRef(new Map());
+
+  const loadWebsites = async (preserveScanning = false) => {
+    console.log('🔄 DEBUG: loadWebsites called, preserveScanning:', preserveScanning);
+    console.trace('🔍 DEBUG: loadWebsites call stack');
+    
     setError('');
     try {
       setLoading(true);
       const items = await dashboard.getWebsites();
       console.log('🔄 DEBUG: Loaded websites:', items.length);
       setList(items);
+
+      // CRITICAL: Only clear scanning state if explicitly requested
+      if (!preserveScanning) {
+        console.log('🧹 DEBUG: Clearing scanning state (preserveScanning=false)');
+        setScanningIds(new Set());
+        setScanProgress(new Map());
+        scanningRef.current = new Set();
+        progressRef.current = new Map();
+      } else {
+        console.log('✅ DEBUG: Preserving scanning state (preserveScanning=true)');
+        // Restore scanning state from refs
+        setScanningIds(new Set(scanningRef.current));
+        setScanProgress(new Map(progressRef.current));
+      }
     } catch (e) {
       console.error('❌ DEBUG: loadWebsites error:', e);
       setError(e.message || 'Failed to load websites');
@@ -40,7 +60,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     try {
       await websites.add({ url: newWebsiteUrl.trim() });
       setNewWebsiteUrl('');
-      await loadWebsites();
+      // Preserve scanning state when adding websites
+      await loadWebsites(true);
       onWebsiteAdded && onWebsiteAdded();
     } catch (e) {
       setError(e.message || 'Failed to add website');
@@ -52,25 +73,25 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const handleScan = async (site) => {
     console.log('🚀 DEBUG: handleScan called for site:', site.id);
     
-    // Step 1: Set initial state
+    // Step 1: Set initial state AND persist in refs
     console.log('📊 DEBUG: Setting initial scanning state');
-    setScanningIds(prev => {
-      const newSet = new Set(prev);
-      newSet.add(site.id);
-      console.log('📊 DEBUG: scanningIds updated, size:', newSet.size);
-      return newSet;
-    });
     
-    setScanProgress(prev => {
-      const newMap = new Map(prev);
-      newMap.set(site.id, {
-        status: 'starting',
-        message: 'Starting scan...',
-        progress: 10
-      });
-      console.log('📊 DEBUG: scanProgress updated for site:', site.id);
-      return newMap;
+    const newScanningIds = new Set(scanningIds);
+    newScanningIds.add(site.id);
+    setScanningIds(newScanningIds);
+    scanningRef.current = new Set(newScanningIds);
+    
+    const newProgress = new Map(scanProgress);
+    newProgress.set(site.id, {
+      status: 'starting',
+      message: 'Starting scan...',
+      progress: 10
     });
+    setScanProgress(newProgress);
+    progressRef.current = new Map(newProgress);
+    
+    console.log('📊 DEBUG: scanningIds updated, size:', newScanningIds.size);
+    console.log('📊 DEBUG: scanProgress updated for site:', site.id);
     
     setError('');
     
@@ -81,7 +102,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       console.log('✅ DEBUG: Scan created with ID:', scan.id);
       onScanStarted && onScanStarted(scan);
       
-      // Step 3: Start polling - SIMPLIFIED
+      // Step 3: Start polling
       let attempts = 0;
       const maxAttempts = 300; // 10 minutes
       
@@ -89,22 +110,22 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         attempts++;
         console.log(`🔄 DEBUG: Polling attempt ${attempts} for scan ${scan.id}`);
         
-        // Update progress
+        // Update progress in both state and refs
         const elapsedMinutes = Math.floor(attempts * 2000 / 60000);
         const elapsedSeconds = Math.floor((attempts * 2000 % 60000) / 1000);
         const progressPercent = Math.min((attempts / maxAttempts) * 90, 90);
         
         console.log(`📊 DEBUG: Updating progress to ${progressPercent}% (${elapsedMinutes}m ${elapsedSeconds}s)`);
-        setScanProgress(prev => {
-          const newMap = new Map(prev);
-          newMap.set(site.id, {
-            status: 'scanning',
-            message: `Scanning... (${elapsedMinutes}m ${elapsedSeconds}s)`,
-            progress: progressPercent
-          });
-          console.log('📊 DEBUG: Progress updated in state');
-          return newMap;
+        
+        const updatedProgress = new Map(progressRef.current);
+        updatedProgress.set(site.id, {
+          status: 'scanning',
+          message: `Scanning... (${elapsedMinutes}m ${elapsedSeconds}s)`,
+          progress: progressPercent
         });
+        setScanProgress(updatedProgress);
+        progressRef.current = updatedProgress;
+        console.log('📊 DEBUG: Progress updated in state and ref');
         
         try {
           console.log('🔍 DEBUG: Calling scanning.getScanMeta');
@@ -114,17 +135,16 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           if (meta && meta.status === 'done') {
             console.log('✅ DEBUG: Scan completed successfully!');
             
-            // Show completion
-            setScanProgress(prev => {
-              const newMap = new Map(prev);
-              newMap.set(site.id, {
-                status: 'completed',
-                message: 'Scan completed successfully!',
-                progress: 100
-              });
-              console.log('📊 DEBUG: Completion state set');
-              return newMap;
+            // Show completion in both state and refs
+            const completedProgress = new Map(progressRef.current);
+            completedProgress.set(site.id, {
+              status: 'completed',
+              message: 'Scan completed successfully!',
+              progress: 100
             });
+            setScanProgress(completedProgress);
+            progressRef.current = completedProgress;
+            console.log('📊 DEBUG: Completion state set');
             
             // Auto-open results
             console.log('🎯 DEBUG: Setting auto-open timer');
@@ -135,24 +155,24 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
               }
             }, 1500);
             
-            // Clean up
+            // Clean up after delay
             console.log('🧹 DEBUG: Setting cleanup timer');
             setTimeout(() => {
               console.log('🧹 DEBUG: Cleaning up scan state');
-              setScanningIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(site.id);
-                console.log('🧹 DEBUG: Removed from scanningIds');
-                return newSet;
-              });
-              setScanProgress(prev => {
-                const newMap = new Map(prev);
-                newMap.delete(site.id);
-                console.log('🧹 DEBUG: Removed from scanProgress');
-                return newMap;
-              });
-              console.log('🔄 DEBUG: Reloading websites');
-              loadWebsites();
+              
+              const cleanScanningIds = new Set(scanningRef.current);
+              cleanScanningIds.delete(site.id);
+              setScanningIds(cleanScanningIds);
+              scanningRef.current = cleanScanningIds;
+              
+              const cleanProgress = new Map(progressRef.current);
+              cleanProgress.delete(site.id);
+              setScanProgress(cleanProgress);
+              progressRef.current = cleanProgress;
+              
+              console.log('🧹 DEBUG: Removed from scanningIds and scanProgress');
+              console.log('🔄 DEBUG: Reloading websites with preserveScanning=true');
+              loadWebsites(true); // Preserve any other ongoing scans
             }, 3000);
             
             return; // Stop polling
@@ -175,15 +195,15 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           // Handle retryable errors
           if (attempts < maxAttempts && /502|503|429|network|fetch/i.test(e.message)) {
             console.log('🔄 DEBUG: Retryable error, scheduling retry');
-            setScanProgress(prev => {
-              const newMap = new Map(prev);
-              newMap.set(site.id, {
-                status: 'retrying',
-                message: `Connection issue, retrying... (${attempts}/${maxAttempts})`,
-                progress: progressPercent
-              });
-              return newMap;
+            const retryProgress = new Map(progressRef.current);
+            retryProgress.set(site.id, {
+              status: 'retrying',
+              message: `Connection issue, retrying... (${attempts}/${maxAttempts})`,
+              progress: progressPercent
             });
+            setScanProgress(retryProgress);
+            progressRef.current = retryProgress;
+            
             setTimeout(() => {
               console.log('🔄 DEBUG: Executing retry');
               pollForCompletion();
@@ -194,28 +214,27 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           // Permanent error
           console.error('❌ DEBUG: Permanent error, stopping scan');
           setError(e.message || 'Scan failed');
-          setScanProgress(prev => {
-            const newMap = new Map(prev);
-            newMap.set(site.id, {
-              status: 'error',
-              message: 'Scan failed - please try again',
-              progress: 0
-            });
-            return newMap;
+          
+          const errorProgress = new Map(progressRef.current);
+          errorProgress.set(site.id, {
+            status: 'error',
+            message: 'Scan failed - please try again',
+            progress: 0
           });
+          setScanProgress(errorProgress);
+          progressRef.current = errorProgress;
           
           setTimeout(() => {
             console.log('🧹 DEBUG: Cleaning up failed scan');
-            setScanningIds(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(site.id);
-              return newSet;
-            });
-            setScanProgress(prev => {
-              const newMap = new Map(prev);
-              newMap.delete(site.id);
-              return newMap;
-            });
+            const cleanScanningIds = new Set(scanningRef.current);
+            cleanScanningIds.delete(site.id);
+            setScanningIds(cleanScanningIds);
+            scanningRef.current = cleanScanningIds;
+            
+            const cleanProgress = new Map(progressRef.current);
+            cleanProgress.delete(site.id);
+            setScanProgress(cleanProgress);
+            progressRef.current = cleanProgress;
           }, 5000);
         }
       };
@@ -227,16 +246,16 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     } catch (e) {
       console.error('❌ DEBUG: Failed to start scan:', e);
       setError(e.message || 'Failed to start scan');
-      setScanningIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(site.id);
-        return newSet;
-      });
-      setScanProgress(prev => {
-        const newMap = new Map(prev);
-        newMap.delete(site.id);
-        return newMap;
-      });
+      
+      const cleanScanningIds = new Set(scanningRef.current);
+      cleanScanningIds.delete(site.id);
+      setScanningIds(cleanScanningIds);
+      scanningRef.current = cleanScanningIds;
+      
+      const cleanProgress = new Map(progressRef.current);
+      cleanProgress.delete(site.id);
+      setScanProgress(cleanProgress);
+      progressRef.current = cleanProgress;
     }
   };
 
@@ -299,25 +318,41 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
               <div className="mb-2 font-medium text-gray-900">{site.name || site.url}</div>
               <div className="mb-3 text-sm text-gray-600 break-all">{site.url}</div>
 
-              {/* DEBUG: Always show scanning state */}
-              {isScanning && (
-                <div className="mb-3 p-3 rounded-md border bg-blue-50 border-blue-200">
-                  <div className="text-sm font-medium text-blue-700">
-                    DEBUG: Scanning = {isScanning ? 'TRUE' : 'FALSE'}
+              {/* Progress indicator */}
+              {isScanning && progress && (
+                <div className={`mb-3 p-3 rounded-md border ${
+                  progress.status === 'completed' ? 'bg-green-50 border-green-200' :
+                  progress.status === 'error' ? 'bg-red-50 border-red-200' :
+                  progress.status === 'retrying' ? 'bg-orange-50 border-orange-200' :
+                  'bg-blue-50 border-blue-200'
+                }`}>
+                  <div className="flex items-center space-x-2 text-sm">
+                    {(progress.status === 'starting' || progress.status === 'scanning') && 
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+                    {progress.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-600" />}
+                    {progress.status === 'error' && <AlertTriangle className="h-4 w-4 text-red-600" />}
+                    
+                    <span className={`font-medium ${
+                      progress.status === 'completed' ? 'text-green-700' :
+                      progress.status === 'error' ? 'text-red-700' :
+                      progress.status === 'retrying' ? 'text-orange-700' :
+                      'text-blue-700'
+                    }`}>
+                      {progress.message}
+                    </span>
                   </div>
-                  {progress && (
-                    <>
-                      <div className="text-sm text-blue-600">
-                        Status: {progress.status} | Message: {progress.message}
-                      </div>
-                      <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="h-2 rounded-full bg-blue-600 transition-all duration-500"
-                          style={{ width: `${progress.progress || 0}%` }}
-                        ></div>
-                      </div>
-                    </>
-                  )}
+                  
+                  {/* Progress bar */}
+                  <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all duration-500 ${
+                        progress.status === 'completed' ? 'bg-green-600' :
+                        progress.status === 'retrying' ? 'bg-orange-600' :
+                        'bg-blue-600'
+                      }`}
+                      style={{ width: `${progress.progress}%` }}
+                    ></div>
+                  </div>
                 </div>
               )}
 
