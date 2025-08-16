@@ -1,5 +1,5 @@
 // src/components/WebsiteManager.jsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { dashboard, websites, scanning } from '../utils/api';
 import { Eye, Loader } from 'lucide-react';
 
@@ -12,14 +12,37 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const [scanProgress, setScanProgress] = useState({}); // Track progress for each scan
   const [completedScans, setCompletedScans] = useState(new Map()); // Track newly completed scans with their IDs
   const [error, setError] = useState('');
+  
+  // ✅ NEW: Use ref to store scan updates that should persist across loadWebsites calls
+  const scanUpdatesRef = useRef(new Map()); // siteId -> {scanId, violations, etc}
 
+  // ✅ FIXED: Merge scan updates with loaded data to prevent overwrites
   const loadWebsites = useCallback(async () => {
     setError('');
     try {
       setLoading(true);
       const items = await dashboard.getWebsites();
       console.log('🔄 loadWebsites() called, got items:', items.map(item => ({ id: item.id, url: item.url, last_scan_id: item.last_scan_id })));
-      setList(items);
+      console.log('🔄 Current scan updates to preserve:', Array.from(scanUpdatesRef.current.entries()));
+      
+      // ✅ FIXED: Merge scan updates with loaded data
+      const mergedItems = items.map(site => {
+        const scanUpdate = scanUpdatesRef.current.get(site.id);
+        if (scanUpdate) {
+          console.log('🔄 Merging scan update for site:', site.id, scanUpdate);
+          return {
+            ...site,
+            last_scan_id: scanUpdate.scanId,
+            total_violations: scanUpdate.violations,
+            compliance_score: scanUpdate.compliance_score,
+            last_scan_date: scanUpdate.last_scan_date
+          };
+        }
+        return site;
+      });
+      
+      console.log('🔄 Final merged items:', mergedItems.map(item => ({ id: item.id, url: item.url, last_scan_id: item.last_scan_id })));
+      setList(mergedItems);
     } catch (e) {
       setError(e.message || 'Failed to load websites');
     } finally {
@@ -49,10 +72,20 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     }
   };
 
-  // ✅ ENHANCED: More detailed logging for state updates
+  // ✅ FIXED: Store scan updates in ref AND state to survive loadWebsites calls
   const updateSiteWithScanResults = useCallback((siteId, scanId, results) => {
     console.log('🔄 updateSiteWithScanResults called with:', { siteId, scanId, violationCount: results.violations.length });
-    console.log('🔄 Current list before update:', list.map(site => ({ id: site.id, url: site.url, last_scan_id: site.last_scan_id })));
+    
+    const scanUpdate = {
+      scanId,
+      violations: results.violations.length,
+      compliance_score: Math.max(0, Math.round((1 - results.violations.length / 1000) * 100)),
+      last_scan_date: new Date().toISOString()
+    };
+    
+    // ✅ FIXED: Store in ref to survive loadWebsites calls
+    scanUpdatesRef.current.set(siteId, scanUpdate);
+    console.log('🔄 Stored scan update in ref:', scanUpdate);
     
     // Update completed scans map
     setCompletedScans(prev => {
@@ -65,17 +98,15 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     // Update website list with scan data
     setList(prevList => {
       console.log('🔄 setList called, prevList:', prevList.map(site => ({ id: site.id, url: site.url, last_scan_id: site.last_scan_id })));
-      console.log('🔄 Looking for site with ID:', siteId);
       
       const updatedList = prevList.map(site => {
-        console.log('🔄 Checking site:', { id: site.id, matches: site.id === siteId });
         if (site.id === siteId) {
           const updatedSite = { 
             ...site, 
             last_scan_id: scanId,
             total_violations: results.violations.length,
-            compliance_score: Math.max(0, Math.round((1 - results.violations.length / 1000) * 100)),
-            last_scan_date: new Date().toISOString()
+            compliance_score: scanUpdate.compliance_score,
+            last_scan_date: scanUpdate.last_scan_date
           };
           console.log('🔄 Updated site object:', updatedSite);
           return updatedSite;
@@ -86,7 +117,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       console.log('🔄 Final updated list:', updatedList.map(site => ({ id: site.id, url: site.url, last_scan_id: site.last_scan_id })));
       return updatedList;
     });
-  }, [list]);
+  }, []);
 
   const pollScanProgress = useCallback(async (scanId, siteId) => {
     console.log('🔄 pollScanProgress started for scanId:', scanId, 'siteId:', siteId);
@@ -110,7 +141,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           
           setScanProgress(prev => ({ ...prev, [siteId]: 100 }));
           
-          // ✅ ENHANCED: Call update function with detailed logging
+          // ✅ FIXED: Update state and ref
           updateSiteWithScanResults(siteId, scanId, results);
           
           setScanningIds(prev => {
@@ -119,9 +150,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
             return next;
           });
           
-          // ✅ REMOVED: Don't call loadWebsites() to avoid overwriting state
-          console.log('🔄 Scan completion processing finished, NOT calling loadWebsites()');
-          
+          console.log('🔄 Scan completion processing finished');
           return;
         }
         
@@ -177,6 +206,9 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       return next;
     });
     
+    // ✅ FIXED: Clear previous scan update from ref
+    scanUpdatesRef.current.delete(site.id);
+    
     try {
       const scan = await scanning.startScan(site.id);
       console.log('Scan created with ID:', scan.id);
@@ -210,6 +242,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       for (const [siteId, storedScanId] of next.entries()) {
         if (storedScanId === scanId) {
           next.delete(siteId);
+          // ✅ FIXED: Also clear from ref after viewing
+          scanUpdatesRef.current.delete(siteId);
           break;
         }
       }
@@ -257,7 +291,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           const progress = scanProgress[site.id] || 0;
           const isNewlyCompleted = completedScans.has(site.id);
           
-          // ✅ ENHANCED: Get scan ID from either completed scans or site data
+          // ✅ FIXED: Get scan ID from either completed scans or site data
           const availableScanId = completedScans.get(site.id) || site.last_scan_id;
           
           // ✅ IMPROVED: Show button if site has violations OR a scan ID
@@ -294,7 +328,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
                 
-                {/* ✅ ENHANCED: Show button if there are results and use real scan ID */}
+                {/* ✅ FIXED: Show button if there are results and use real scan ID */}
                 {hasResults && !isScanning && (
                   <button
                     onClick={() => {
@@ -303,9 +337,9 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                       console.log('🔍 Site last_scan_id:', site.last_scan_id);
                       console.log('🔍 Site violations:', site.total_violations);
                       console.log('🔍 Completed scan ID:', completedScans.get(site.id));
-                      console.log('🔍 Full site object:', site);
+                      console.log('🔍 Scan update from ref:', scanUpdatesRef.current.get(site.id));
                       
-                      // ✅ ENHANCED: Only use fallback if absolutely no scan ID available
+                      // ✅ FIXED: Only use fallback if absolutely no scan ID available
                       const scanIdToUse = availableScanId || `fallback-${site.id}`;
                       handleViewResults(scanIdToUse);
                     }}
