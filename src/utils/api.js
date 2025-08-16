@@ -1,4 +1,4 @@
-// STEP 2: Update your src/utils/api.js file
+// CORRECTED src/utils/api.js - Includes missing authentication functions
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
 
@@ -39,6 +39,47 @@ export const auth = {
       body: JSON.stringify(credentials),
     });
   },
+  
+  // ✅ MISSING FUNCTION: Check if user is authenticated
+  isAuthenticated: () => {
+    const token = localStorage.getItem('sentryprime_token');
+    if (!token) return false;
+    
+    try {
+      // Basic token validation - check if it's not expired
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const now = Date.now() / 1000;
+      return payload.exp > now;
+    } catch (e) {
+      return false;
+    }
+  },
+  
+  // ✅ MISSING FUNCTION: Get current user data
+  getCurrentUser: () => {
+    const token = localStorage.getItem('sentryprime_token');
+    const userData = localStorage.getItem('sentryprime_user');
+    
+    if (!token || !userData) return null;
+    
+    try {
+      return JSON.parse(userData);
+    } catch (e) {
+      return null;
+    }
+  },
+  
+  // ✅ MISSING FUNCTION: Logout user
+  logout: () => {
+    localStorage.removeItem('sentryprime_token');
+    localStorage.removeItem('sentryprime_user');
+  },
+  
+  // ✅ HELPER FUNCTION: Store auth data after login
+  storeAuthData: (token, user) => {
+    localStorage.setItem('sentryprime_token', token);
+    localStorage.setItem('sentryprime_user', JSON.stringify(user));
+  }
 };
 
 export const dashboard = {
@@ -67,7 +108,6 @@ export const websites = {
 };
 
 export const scanning = {
-  // ✅ FIXED: Get individual website for startScan
   startScan: async (websiteId) => {
     const website = await makeRequest(`/api/dashboard/websites/${websiteId}`);
     return await makeRequest('/api/dashboard/scans', {
@@ -79,7 +119,6 @@ export const scanning = {
     });
   },
   
-  // ✅ NEW: Get scan metadata for polling
   getScanMeta: async (scanId) => {
     return await makeRequest(`/api/scans/${scanId}`);
   },
