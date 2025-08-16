@@ -13,10 +13,10 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const [completedScans, setCompletedScans] = useState(new Map()); // Track newly completed scans with their IDs
   const [error, setError] = useState('');
   
-  // ✅ NEW: Use ref to store scan updates that should persist across loadWebsites calls
+  // ✅ FIXED: Use ref to store scan updates that persist until explicitly cleared
   const scanUpdatesRef = useRef(new Map()); // siteId -> {scanId, violations, etc}
 
-  // ✅ FIXED: Merge scan updates with loaded data to prevent overwrites
+  // ✅ FIXED: Merge scan updates with loaded data and don't clear ref prematurely
   const loadWebsites = useCallback(async () => {
     setError('');
     try {
@@ -72,7 +72,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     }
   };
 
-  // ✅ FIXED: Store scan updates in ref AND state to survive loadWebsites calls
+  // ✅ FIXED: Store scan updates in ref AND ensure they persist
   const updateSiteWithScanResults = useCallback((siteId, scanId, results) => {
     console.log('🔄 updateSiteWithScanResults called with:', { siteId, scanId, violationCount: results.violations.length });
     
@@ -86,6 +86,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     // ✅ FIXED: Store in ref to survive loadWebsites calls
     scanUpdatesRef.current.set(siteId, scanUpdate);
     console.log('🔄 Stored scan update in ref:', scanUpdate);
+    console.log('🔄 Ref now contains:', Array.from(scanUpdatesRef.current.entries()));
     
     // Update completed scans map
     setCompletedScans(prev => {
@@ -95,7 +96,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       return newMap;
     });
     
-    // Update website list with scan data
+    // Update website list with scan data immediately
     setList(prevList => {
       console.log('🔄 setList called, prevList:', prevList.map(site => ({ id: site.id, url: site.url, last_scan_id: site.last_scan_id })));
       
@@ -141,7 +142,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           
           setScanProgress(prev => ({ ...prev, [siteId]: 100 }));
           
-          // ✅ FIXED: Update state and ref
+          // ✅ FIXED: Update state and ref synchronously
           updateSiteWithScanResults(siteId, scanId, results);
           
           setScanningIds(prev => {
@@ -206,8 +207,9 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       return next;
     });
     
-    // ✅ FIXED: Clear previous scan update from ref
+    // ✅ FIXED: Only clear ref when starting a NEW scan
     scanUpdatesRef.current.delete(site.id);
+    console.log('🔄 Cleared previous scan update for site:', site.id);
     
     try {
       const scan = await scanning.startScan(site.id);
@@ -235,15 +237,15 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const handleViewResults = (scanId) => {
     console.log('🔍 handleViewResults called with scanId:', scanId);
     
-    // Clear completion status after viewing
+    // ✅ FIXED: Don't clear ref data when viewing results - only clear completion status
     setCompletedScans(prev => {
       const next = new Map(prev);
       // Remove any entries that have this scanId as value
       for (const [siteId, storedScanId] of next.entries()) {
         if (storedScanId === scanId) {
           next.delete(siteId);
-          // ✅ FIXED: Also clear from ref after viewing
-          scanUpdatesRef.current.delete(siteId);
+          // ✅ FIXED: Only clear ref AFTER successful viewing, not before
+          console.log('🔄 Clearing completion status for site:', siteId, 'but keeping ref data');
           break;
         }
       }
@@ -252,6 +254,12 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     
     onViewResults && onViewResults(scanId);
   };
+
+  // ✅ NEW: Function to clear ref data after successful viewing
+  const clearScanUpdate = useCallback((siteId) => {
+    scanUpdatesRef.current.delete(siteId);
+    console.log('🔄 Cleared scan update from ref for site:', siteId);
+  }, []);
 
   if (loading) {
     return (
@@ -338,6 +346,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                       console.log('🔍 Site violations:', site.total_violations);
                       console.log('🔍 Completed scan ID:', completedScans.get(site.id));
                       console.log('🔍 Scan update from ref:', scanUpdatesRef.current.get(site.id));
+                      console.log('🔍 All ref data:', Array.from(scanUpdatesRef.current.entries()));
                       
                       // ✅ FIXED: Only use fallback if absolutely no scan ID available
                       const scanIdToUse = availableScanId || `fallback-${site.id}`;
