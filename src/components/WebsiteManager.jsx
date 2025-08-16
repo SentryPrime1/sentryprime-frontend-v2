@@ -18,6 +18,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     try {
       setLoading(true);
       const items = await dashboard.getWebsites();
+      console.log('🔄 loadWebsites() called, got items:', items.map(item => ({ id: item.id, url: item.url, last_scan_id: item.last_scan_id })));
       setList(items);
     } catch (e) {
       setError(e.message || 'Failed to load websites');
@@ -48,9 +49,10 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     }
   };
 
-  // ✅ FIXED: Use useCallback to prevent stale closures
+  // ✅ ENHANCED: More detailed logging for state updates
   const updateSiteWithScanResults = useCallback((siteId, scanId, results) => {
-    console.log('🔄 Updating site with scan results:', { siteId, scanId, violationCount: results.violations.length });
+    console.log('🔄 updateSiteWithScanResults called with:', { siteId, scanId, violationCount: results.violations.length });
+    console.log('🔄 Current list before update:', list.map(site => ({ id: site.id, url: site.url, last_scan_id: site.last_scan_id })));
     
     // Update completed scans map
     setCompletedScans(prev => {
@@ -62,7 +64,11 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     
     // Update website list with scan data
     setList(prevList => {
+      console.log('🔄 setList called, prevList:', prevList.map(site => ({ id: site.id, url: site.url, last_scan_id: site.last_scan_id })));
+      console.log('🔄 Looking for site with ID:', siteId);
+      
       const updatedList = prevList.map(site => {
+        console.log('🔄 Checking site:', { id: site.id, matches: site.id === siteId });
         if (site.id === siteId) {
           const updatedSite = { 
             ...site, 
@@ -76,11 +82,14 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         }
         return site;
       });
+      
+      console.log('🔄 Final updated list:', updatedList.map(site => ({ id: site.id, url: site.url, last_scan_id: site.last_scan_id })));
       return updatedList;
     });
-  }, []);
+  }, [list]);
 
   const pollScanProgress = useCallback(async (scanId, siteId) => {
+    console.log('🔄 pollScanProgress started for scanId:', scanId, 'siteId:', siteId);
     let attempts = 0;
     const maxAttempts = 60; // 2 minutes max
     
@@ -101,7 +110,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           
           setScanProgress(prev => ({ ...prev, [siteId]: 100 }));
           
-          // ✅ FIXED: Use the callback to update state properly
+          // ✅ ENHANCED: Call update function with detailed logging
           updateSiteWithScanResults(siteId, scanId, results);
           
           setScanningIds(prev => {
@@ -110,10 +119,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
             return next;
           });
           
-          // ✅ FIXED: Don't reload websites immediately, let state update first
-          setTimeout(() => {
-            loadWebsites();
-          }, 1000);
+          // ✅ REMOVED: Don't call loadWebsites() to avoid overwriting state
+          console.log('🔄 Scan completion processing finished, NOT calling loadWebsites()');
           
           return;
         }
@@ -155,9 +162,10 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     };
     
     poll();
-  }, [updateSiteWithScanResults, loadWebsites]);
+  }, [updateSiteWithScanResults]);
 
   const handleScan = async (site) => {
+    console.log('🔄 handleScan called for site:', { id: site.id, url: site.url });
     setError('');
     setScanningIds(prev => new Set(prev).add(site.id));
     setScanProgress(prev => ({ ...prev, [site.id]: 0 }));
@@ -249,7 +257,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           const progress = scanProgress[site.id] || 0;
           const isNewlyCompleted = completedScans.has(site.id);
           
-          // ✅ FIXED: Get scan ID from either completed scans or site data
+          // ✅ ENHANCED: Get scan ID from either completed scans or site data
           const availableScanId = completedScans.get(site.id) || site.last_scan_id;
           
           // ✅ IMPROVED: Show button if site has violations OR a scan ID
@@ -286,7 +294,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
                 
-                {/* ✅ FIXED: Show button if there are results and use real scan ID */}
+                {/* ✅ ENHANCED: Show button if there are results and use real scan ID */}
                 {hasResults && !isScanning && (
                   <button
                     onClick={() => {
@@ -295,8 +303,9 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                       console.log('🔍 Site last_scan_id:', site.last_scan_id);
                       console.log('🔍 Site violations:', site.total_violations);
                       console.log('🔍 Completed scan ID:', completedScans.get(site.id));
+                      console.log('🔍 Full site object:', site);
                       
-                      // ✅ FIXED: Only use fallback if absolutely no scan ID available
+                      // ✅ ENHANCED: Only use fallback if absolutely no scan ID available
                       const scanIdToUse = availableScanId || `fallback-${site.id}`;
                       handleViewResults(scanIdToUse);
                     }}
