@@ -1,5 +1,5 @@
 // src/components/WebsiteManager.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { dashboard, websites, scanning } from '../utils/api';
 import { Eye, Loader } from 'lucide-react';
 
@@ -13,7 +13,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const [completedScans, setCompletedScans] = useState(new Map()); // Track newly completed scans with their IDs
   const [error, setError] = useState('');
 
-  const loadWebsites = async () => {
+  const loadWebsites = useCallback(async () => {
     setError('');
     try {
       setLoading(true);
@@ -24,11 +24,11 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadWebsites();
-  }, []);
+  }, [loadWebsites]);
 
   const handleAddWebsite = async (e) => {
     e.preventDefault();
@@ -48,7 +48,39 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     }
   };
 
-  const pollScanProgress = async (scanId, siteId) => {
+  // ✅ FIXED: Use useCallback to prevent stale closures
+  const updateSiteWithScanResults = useCallback((siteId, scanId, results) => {
+    console.log('🔄 Updating site with scan results:', { siteId, scanId, violationCount: results.violations.length });
+    
+    // Update completed scans map
+    setCompletedScans(prev => {
+      const newMap = new Map(prev);
+      newMap.set(siteId, scanId);
+      console.log('🔄 Updated completedScans map:', Array.from(newMap.entries()));
+      return newMap;
+    });
+    
+    // Update website list with scan data
+    setList(prevList => {
+      const updatedList = prevList.map(site => {
+        if (site.id === siteId) {
+          const updatedSite = { 
+            ...site, 
+            last_scan_id: scanId,
+            total_violations: results.violations.length,
+            compliance_score: Math.max(0, Math.round((1 - results.violations.length / 1000) * 100)),
+            last_scan_date: new Date().toISOString()
+          };
+          console.log('🔄 Updated site object:', updatedSite);
+          return updatedSite;
+        }
+        return site;
+      });
+      return updatedList;
+    });
+  }, []);
+
+  const pollScanProgress = useCallback(async (scanId, siteId) => {
     let attempts = 0;
     const maxAttempts = 60; // 2 minutes max
     
@@ -69,23 +101,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           
           setScanProgress(prev => ({ ...prev, [siteId]: 100 }));
           
-          // ✅ FIXED: Store the completed scan ID for this site
-          setCompletedScans(prev => new Map(prev).set(siteId, scanId));
-          
-          // ✅ FIXED: Update the website list item with the scan ID
-          setList(prevList => 
-            prevList.map(site => 
-              site.id === siteId 
-                ? { 
-                    ...site, 
-                    last_scan_id: scanId,
-                    total_violations: results.violations.length,
-                    compliance_score: Math.round((1 - results.violations.length / 100) * 100),
-                    last_scan_date: new Date().toISOString()
-                  }
-                : site
-            )
-          );
+          // ✅ FIXED: Use the callback to update state properly
+          updateSiteWithScanResults(siteId, scanId, results);
           
           setScanningIds(prev => {
             const next = new Set(prev);
@@ -93,8 +110,11 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
             return next;
           });
           
-          // Refresh website list to get updated data from backend
-          await loadWebsites();
+          // ✅ FIXED: Don't reload websites immediately, let state update first
+          setTimeout(() => {
+            loadWebsites();
+          }, 1000);
+          
           return;
         }
         
@@ -135,7 +155,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     };
     
     poll();
-  };
+  }, [updateSiteWithScanResults, loadWebsites]);
 
   const handleScan = async (site) => {
     setError('');
