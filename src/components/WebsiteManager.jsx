@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { dashboard, websites, scanning } from '../utils/api';
-import { Eye, Loader2, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Eye, Loader2, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 
+// Configurable knobs
 const MAX_SCAN_MINUTES = 10;
-const POLL_EVERY_MS = 2000;
+const POLL_EVERY_MS = 2000;     // normal tick
+const ERROR_RETRY_MS = 3000;    // on transient errors
 
 export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewResults }) {
   const [list, setList] = useState([]);
@@ -14,15 +16,21 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const [scanProgress, setScanProgress] = useState(new Map());
   const [error, setError] = useState('');
 
-  const mountedRef = useRef(true);
-  const scanningRef = useRef(new Set()); // Persistent reference
+  // Advanced safety/persistence
+  const mountedRef = useRef(false);        // avoid setState after unmount
+  const scanningRef = useRef(new Set());   // persist siteIds being scanned across renders
+  const timersRef = useRef(new Map());     // siteId -> timeoutId (cleared on unmount)
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      for (const id of timersRef.current.values()) clearTimeout(id);
+      timersRef.current.clear();
     };
   }, []);
+
+  const safeSet = (fn) => mountedRef.current && fn();
 
   const loadWebsites = async (preserveScanning = false) => {
     setError('');
@@ -30,18 +38,20 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       setLoading(true);
       const items = await dashboard.getWebsites();
       console.log('🔄 Loaded websites from backend:', items.length);
-      setList(items);
-      
-      // ✅ CRITICAL: Don't reset scanning state when refreshing data
+      safeSet(() => setList(items));
+
+      // Do NOT blow away progress mid-scan unless we explicitly choose to
       if (!preserveScanning) {
-        setScanningIds(new Set());
-        setScanProgress(new Map());
-        scanningRef.current = new Set();
+        safeSet(() => {
+          setScanningIds(new Set());
+          setScanProgress(new Map());
+          scanningRef.current = new Set();
+        });
       }
     } catch (e) {
-      setError(e.message || 'Failed to load websites');
+      safeSet(() => setError(e.message || 'Failed to load websites'));
     } finally {
-      setLoading(false);
+      safeSet(() => setLoading(false));
     }
   };
 
@@ -67,163 +77,197 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     }
   };
 
+  // Helpers
+  const setProgress = (siteId, status, message, progress) => {
+    if (!mountedRef.current) return;
+    setScanProgress(prev => {
+      const next = new Map(prev);
+      // keep last attempts if present (purely cosmetic)
+      const prevEntry = next.get(siteId);
+      const attempts = prevEntry?.attempts ?? 0;
+      next.set(siteId, { status, message, progress, attempts });
+      return next;
+    });
+  };
+
+  const schedule = (siteId, fn, ms) => {
+    if (!mountedRef.current) return;
+    const prev = timersRef.current.get(siteId);
+    if (prev) clearTimeout(prev);
+    const id = setTimeout(() => mountedRef.current && fn(), ms);
+    timersRef.current.set(siteId, id);
+  };
+
+  const clearSiteTimers = (siteId) => {
+    const t = timersRef.current.get(siteId);
+    if (t) clearTimeout(t);
+    timersRef.current.delete(siteId);
+    const open = timersRef.current.get(`${siteId}__open`);
+    if (open) clearTimeout(open);
+    timersRef.current.delete(`${siteId}__open`);
+    const cleanup = timersRef.current.get(`${siteId}__cleanup`);
+    if (cleanup) clearTimeout(cleanup);
+    timersRef.current.delete(`${siteId}__cleanup`);
+  };
+
+  // HYBRID: simple working UI + hardened polling
   const handleScan = async (site) => {
-    console.log('🔄 STARTING SCAN for site:', site.id);
-    
-    // ✅ PERSISTENT: Use ref to maintain state across re-renders
-    scanningRef.current.add(site.id);
-    
-    setScanningIds(prev => new Set(prev).add(site.id));
-    setScanProgress(prev => new Map(prev).set(site.id, { 
-      status: 'starting', 
-      message: 'Initializing scan...', 
-      attempts: 0,
-      progress: 5
-    }));
-    
+    console.log('🔄 Starting scan for site:', site.id);
     setError('');
-    
+
+    // persist scanning instantly so UI sticks
+    scanningRef.current.add(site.id);
+    setScanningIds(prev => new Set(prev).add(site.id));
+    setProgress(site.id, 'starting', 'Starting scan...', 10);
+
     try {
       const scan = await scanning.startScan(site.id);
       console.log('✅ Scan created with ID:', scan.id);
       onScanStarted && onScanStarted(scan);
-      
+
       const maxAttempts = Math.ceil((MAX_SCAN_MINUTES * 60 * 1000) / POLL_EVERY_MS);
       let attempts = 0;
 
-      const updateProgress = (status, message, progress = 0) => {
+      const tick = async () => {
         if (!mountedRef.current) return;
-        console.log(`📊 Updating progress: ${status} - ${message} (${progress}%)`);
-        setScanProgress(prev => {
-          const newMap = new Map(prev);
-          newMap.set(site.id, { status, message, attempts, progress });
-          return newMap;
-        });
-      };
+        attempts += 1;
 
-      const completeScan = async () => {
-        console.log('🎯 Completing scan for site:', site.id);
-        
-        // ✅ CRITICAL: Remove from persistent ref
-        scanningRef.current.delete(site.id);
-        
-        // Update progress to completed state
-        updateProgress('completed', 'Scan completed successfully!', 100);
-        
-        // Wait a moment for user to see completion
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // ✅ PRESERVE SCANNING STATE: Don't reset other scans
-        if (mountedRef.current) {
-          setScanningIds(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(site.id);
-            return newSet;
-          });
-          setScanProgress(prev => {
-            const newMap = new Map(prev);
-            newMap.delete(site.id);
-            return newMap;
-          });
-          
-          // ✅ REFRESH DATA: But preserve other scanning states
-          await loadWebsites(true); // preserveScanning = true
-        }
-      };
-      
-      const pollForCompletion = async () => {
+        // cosmetic: store attempts so elapsed time reads correctly
+        setScanProgress(prev => {
+          const next = new Map(prev);
+          const current = next.get(site.id) || {};
+          next.set(site.id, { ...current, attempts });
+          return next;
+        });
+
+        const elapsed = attempts * POLL_EVERY_MS;
+        const m = Math.floor(elapsed / 60000);
+        const s = Math.floor((elapsed % 60000) / 1000);
+        const pct = Math.min((attempts / maxAttempts) * 90, 90); // cap at 90% until done
+        setProgress(site.id, 'scanning', `Scanning... (${m}m ${s}s)`, pct);
+
         try {
-          attempts++;
-          console.log(`🔄 Polling attempt ${attempts} for scan ${scan.id}`);
-          
-          const elapsedMinutes = Math.floor(attempts * POLL_EVERY_MS / 60000);
-          const elapsedSeconds = Math.floor((attempts * POLL_EVERY_MS % 60000) / 1000);
-          const progressPercent = Math.min((attempts / maxAttempts) * 95, 95);
-          
-          updateProgress('scanning', `Scanning... (${elapsedMinutes}m ${elapsedSeconds}s)`, progressPercent);
-          
           const meta = await scanning.getScanMeta(scan.id);
           console.log(`📊 Scan meta (attempt ${attempts}):`, meta);
-          
-          if (meta && meta.status === 'done') {
-            console.log('✅ Scan completed! Total violations:', meta.total_violations);
-            
-            // Auto-open results
-            setTimeout(() => {
-              if (mountedRef.current && onViewResults) {
-                console.log('🎯 Auto-opening results for scan:', scan.id);
-                onViewResults(scan.id);
-              }
-            }, 2000); // Delay to let user see completion
-            
-            await completeScan();
-            
-          } else if (meta && meta.status === 'error') {
-            throw new Error('Scan failed on backend');
-          } else if (attempts >= maxAttempts) {
-            throw new Error(`Scan timed out after ${MAX_SCAN_MINUTES} minutes`);
-          } else {
-            // Continue polling
-            setTimeout(pollForCompletion, POLL_EVERY_MS);
-          }
-        } catch (e) {
-          console.error('❌ Polling error:', e);
-          
-          const errorMessage = String(e?.message || '');
-          const isRetryableError = /502|503|429|network|fetch|timeout/i.test(errorMessage);
-          
-          if (isRetryableError && attempts < maxAttempts) {
-            const progressPercent = Math.min((attempts / maxAttempts) * 95, 95);
-            updateProgress('retrying', `Connection issue, retrying... (${attempts}/${maxAttempts})`, progressPercent);
-            setTimeout(pollForCompletion, 3000);
-            return;
-          }
-          
-          // Handle errors
-          scanningRef.current.delete(site.id);
-          
-          if (attempts >= maxAttempts) {
-            setError(`Scan timed out after ${Math.floor(attempts * POLL_EVERY_MS / 60000)} minutes.`);
-            updateProgress('timeout', 'Scan timed out - may still be processing', 95);
-          } else {
-            setError(errorMessage || 'Scan failed');
-            updateProgress('error', 'Scan failed - please try again', 0);
-          }
-          
-          setTimeout(() => {
-            if (mountedRef.current) {
+
+          if (meta?.status === 'done') {
+            // make the bar complete, show success, auto-open, refresh list (preserve other scans)
+            setProgress(site.id, 'completed', 'Scan completed successfully!', 100);
+
+            // auto-open results shortly after success message
+            const openTimer = setTimeout(() => {
+              if (mountedRef.current && onViewResults) onViewResults(scan.id);
+              timersRef.current.delete(`${site.id}__open`);
+            }, 1500);
+            timersRef.current.set(`${site.id}__open`, openTimer);
+
+            // refresh data but keep scanning UI for any other cards alive
+            const cleanupTimer = setTimeout(async () => {
+              if (!mountedRef.current) return;
+              await loadWebsites(true); // preserveScanning
+              scanningRef.current.delete(site.id);
               setScanningIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(site.id);
-                return newSet;
+                const ns = new Set(prev);
+                ns.delete(site.id);
+                return ns;
               });
               setScanProgress(prev => {
-                const newMap = new Map(prev);
-                newMap.delete(site.id);
-                return newMap;
+                const nm = new Map(prev);
+                nm.delete(site.id);
+                return nm;
               });
-            }
+              clearSiteTimers(site.id);
+              timersRef.current.delete(`${site.id}__cleanup`);
+            }, 2500);
+            timersRef.current.set(`${site.id}__cleanup`, cleanupTimer);
+
+            return;
+          }
+
+          if (meta?.status === 'error') {
+            throw new Error('Scan failed on backend');
+          }
+
+          if (attempts >= maxAttempts) {
+            setError(`Scan timed out after ${MAX_SCAN_MINUTES} minutes. It may still be finishing on the server.`);
+            setProgress(site.id, 'timeout', 'Scan timed out - may still be processing', 95);
+            scanningRef.current.delete(site.id);
+
+            const cleanupTimer = setTimeout(() => {
+              if (!mountedRef.current) return;
+              setScanningIds(prev => {
+                const ns = new Set(prev);
+                ns.delete(site.id);
+                return ns;
+              });
+              setScanProgress(prev => {
+                const nm = new Map(prev);
+                nm.delete(site.id);
+                return nm;
+              });
+              clearSiteTimers(site.id);
+              timersRef.current.delete(`${site.id}__cleanup`);
+            }, 5000);
+            timersRef.current.set(`${site.id}__cleanup`, cleanupTimer);
+            return;
+          }
+
+          // keep polling
+          schedule(site.id, tick, POLL_EVERY_MS);
+
+        } catch (e) {
+          console.error('Polling error:', e);
+          const msg = String(e?.message || '');
+          const retryable = /502|503|429|network|fetch|timeout/i.test(msg);
+
+          if (retryable && attempts < maxAttempts) {
+            setProgress(site.id, 'retrying', `Connection issue, retrying... (${attempts}/${maxAttempts})`, Math.min((attempts / maxAttempts) * 90, 90));
+            schedule(site.id, tick, ERROR_RETRY_MS);
+            return;
+          }
+
+          // permanent error
+          setError(msg || 'Scan failed');
+          setProgress(site.id, 'error', 'Scan failed - please try again', 0);
+          scanningRef.current.delete(site.id);
+
+          const cleanupTimer = setTimeout(() => {
+            if (!mountedRef.current) return;
+            setScanningIds(prev => {
+              const ns = new Set(prev);
+              ns.delete(site.id);
+              return ns;
+            });
+            setScanProgress(prev => {
+              const nm = new Map(prev);
+              nm.delete(site.id);
+              return nm;
+            });
+            clearSiteTimers(site.id);
+            timersRef.current.delete(`${site.id}__cleanup`);
           }, 5000);
+          timersRef.current.set(`${site.id}__cleanup`, cleanupTimer);
         }
       };
-      
-      // Start polling
-      pollForCompletion();
-      
+
+      // kick off polling with the simple, reliable loop
+      schedule(site.id, tick, POLL_EVERY_MS);
+
     } catch (e) {
-      console.error('❌ Failed to start scan:', e);
+      console.error('Failed to start scan:', e);
       setError(e.message || 'Failed to start scan');
       scanningRef.current.delete(site.id);
       setScanningIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(site.id);
-        return newSet;
+        const ns = new Set(prev);
+        ns.delete(site.id);
+        return ns;
       });
       setScanProgress(prev => {
-        const newMap = new Map(prev);
-        newMap.delete(site.id);
-        return newMap;
+        const nm = new Map(prev);
+        nm.delete(site.id);
+        return nm;
       });
+      clearSiteTimers(site.id);
     }
   };
 
@@ -275,55 +319,53 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
 
       <div className="grid gap-4 md:grid-cols-2">
         {list.map((site) => {
-          // ✅ PERSISTENT: Check both state and ref for scanning status
+          // hybrid: UI uses state; persistence uses ref so reloads don't kill progress
           const isScanning = scanningIds.has(site.id) || scanningRef.current.has(site.id);
           const progress = scanProgress.get(site.id);
           const canViewResults = !!site.last_scan_id && !isScanning;
-          
-          console.log(`🎨 Rendering site ${site.id}: isScanning=${isScanning}, hasLastScan=${!!site.last_scan_id}, progress=`, progress);
-          
+
           return (
             <div key={site.id} className="rounded-lg border p-4 bg-white shadow-sm hover:shadow-md transition-shadow">
               <div className="mb-2 font-medium text-gray-900">{site.name || site.url}</div>
               <div className="mb-3 text-sm text-gray-600 break-all">{site.url}</div>
 
-              {/* ✅ PERSISTENT: Show progress when scanning */}
-              {isScanning && (
+              {isScanning && progress && (
                 <div className={`mb-3 p-3 rounded-md border ${
-                  progress?.status === 'completed' ? 'bg-green-50 border-green-200' :
-                  progress?.status === 'error' ? 'bg-red-50 border-red-200' :
-                  progress?.status === 'timeout' ? 'bg-yellow-50 border-yellow-200' :
-                  progress?.status === 'retrying' ? 'bg-orange-50 border-orange-200' :
+                  progress.status === 'completed' ? 'bg-green-50 border-green-200' :
+                  progress.status === 'error' ? 'bg-red-50 border-red-200' :
+                  progress.status === 'timeout' ? 'bg-yellow-50 border-yellow-200' :
+                  progress.status === 'retrying' ? 'bg-orange-50 border-orange-200' :
                   'bg-blue-50 border-blue-200'
                 }`}>
                   <div className="flex items-center space-x-2 text-sm">
-                    {(!progress || progress.status === 'starting' || progress.status === 'scanning') && 
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
-                    {progress?.status === 'retrying' && <Clock className="h-4 w-4 text-orange-600" />}
-                    {progress?.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-600" />}
-                    {progress?.status === 'timeout' && <Clock className="h-4 w-4 text-yellow-600" />}
-                    {progress?.status === 'error' && <AlertTriangle className="h-4 w-4 text-red-600" />}
-                    
+                    {(progress.status === 'starting' || progress.status === 'scanning') && (
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    )}
+                    {progress.status === 'retrying' && <Clock className="h-4 w-4 text-orange-600" />}
+                    {progress.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-600" />}
+                    {progress.status === 'timeout' && <Clock className="h-4 w-4 text-yellow-600" />}
+                    {progress.status === 'error' && <AlertTriangle className="h-4 w-4 text-red-600" />}
+
                     <span className={`font-medium ${
-                      progress?.status === 'completed' ? 'text-green-700' :
-                      progress?.status === 'error' ? 'text-red-700' :
-                      progress?.status === 'timeout' ? 'text-yellow-700' :
-                      progress?.status === 'retrying' ? 'text-orange-700' :
+                      progress.status === 'completed' ? 'text-green-700' :
+                      progress.status === 'error' ? 'text-red-700' :
+                      progress.status === 'timeout' ? 'text-yellow-700' :
+                      progress.status === 'retrying' ? 'text-orange-700' :
                       'text-blue-700'
                     }`}>
-                      {progress?.message || 'Scanning...'}
+                      {progress.message}
                     </span>
                   </div>
-                  
+
                   <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
-                    <div 
+                    <div
                       className={`h-2 rounded-full transition-all duration-500 ${
-                        progress?.status === 'completed' ? 'bg-green-600' :
-                        progress?.status === 'retrying' ? 'bg-orange-600' :
+                        progress.status === 'completed' ? 'bg-green-600' :
+                        progress.status === 'retrying' ? 'bg-orange-600' :
                         'bg-blue-600'
                       }`}
-                      style={{ width: `${progress?.progress || 5}%` }}
-                    ></div>
+                      style={{ width: `${progress.progress ?? 10}%` }}
+                    />
                   </div>
                 </div>
               )}
@@ -333,15 +375,15 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   onClick={() => handleScan(site)}
                   disabled={isScanning}
                   className={`rounded-md px-3 py-2 text-sm font-medium flex items-center gap-2 transition-colors ${
-                    isScanning 
-                      ? 'bg-gray-400 text-white cursor-not-allowed opacity-60' 
+                    isScanning
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
                 >
                   {isScanning && <Loader2 className="h-4 w-4 animate-spin" />}
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
-                
+
                 {canViewResults && (
                   <button
                     onClick={() => handleViewResults(site.last_scan_id)}
