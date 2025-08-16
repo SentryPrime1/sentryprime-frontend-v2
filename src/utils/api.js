@@ -1,4 +1,4 @@
-// CORRECTED src/utils/api.js - Includes missing authentication functions
+// FIXED src/utils/api.js - Includes missing getStats function
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
 
@@ -40,7 +40,7 @@ export const auth = {
     });
   },
   
-  // ✅ MISSING FUNCTION: Check if user is authenticated
+  // ✅ Check if user is authenticated
   isAuthenticated: () => {
     const token = localStorage.getItem('sentryprime_token');
     if (!token) return false;
@@ -55,7 +55,7 @@ export const auth = {
     }
   },
   
-  // ✅ MISSING FUNCTION: Get current user data
+  // ✅ Get current user data
   getCurrentUser: () => {
     const token = localStorage.getItem('sentryprime_token');
     const userData = localStorage.getItem('sentryprime_user');
@@ -69,13 +69,13 @@ export const auth = {
     }
   },
   
-  // ✅ MISSING FUNCTION: Logout user
+  // ✅ Logout user
   logout: () => {
     localStorage.removeItem('sentryprime_token');
     localStorage.removeItem('sentryprime_user');
   },
   
-  // ✅ HELPER FUNCTION: Store auth data after login
+  // ✅ Store auth data after login
   storeAuthData: (token, user) => {
     localStorage.setItem('sentryprime_token', token);
     localStorage.setItem('sentryprime_user', JSON.stringify(user));
@@ -83,6 +83,11 @@ export const auth = {
 };
 
 export const dashboard = {
+  // ✅ FIXED: Added missing getStats function
+  getStats: async () => {
+    return await makeRequest('/api/dashboard/overview');
+  },
+  
   getOverview: async () => {
     return await makeRequest('/api/dashboard/overview');
   },
