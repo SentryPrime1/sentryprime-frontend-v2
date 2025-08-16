@@ -69,8 +69,23 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           
           setScanProgress(prev => ({ ...prev, [siteId]: 100 }));
           
-          // Store the completed scan ID for this site
+          // ✅ FIXED: Store the completed scan ID for this site
           setCompletedScans(prev => new Map(prev).set(siteId, scanId));
+          
+          // ✅ FIXED: Update the website list item with the scan ID
+          setList(prevList => 
+            prevList.map(site => 
+              site.id === siteId 
+                ? { 
+                    ...site, 
+                    last_scan_id: scanId,
+                    total_violations: results.violations.length,
+                    compliance_score: Math.round((1 - results.violations.length / 100) * 100),
+                    last_scan_date: new Date().toISOString()
+                  }
+                : site
+            )
+          );
           
           setScanningIds(prev => {
             const next = new Set(prev);
@@ -78,7 +93,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
             return next;
           });
           
-          // Refresh website list to show updated data
+          // Refresh website list to get updated data from backend
           await loadWebsites();
           return;
         }
@@ -214,14 +229,11 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           const progress = scanProgress[site.id] || 0;
           const isNewlyCompleted = completedScans.has(site.id);
           
-          // ✅ FIXED: More permissive button visibility logic
-          // Show button if site has violations OR a scan ID OR is newly completed
-          const hasResults = (site.total_violations && site.total_violations > 0) || 
-                           site.last_scan_id || 
-                           isNewlyCompleted;
+          // ✅ FIXED: Get scan ID from either completed scans or site data
+          const availableScanId = completedScans.get(site.id) || site.last_scan_id;
           
-          // Get the best available scan ID for the button
-          const scanIdToUse = completedScans.get(site.id) || site.last_scan_id;
+          // ✅ IMPROVED: Show button if site has violations OR a scan ID
+          const hasResults = (site.total_violations && site.total_violations > 0) || availableScanId;
           
           return (
             <div key={site.id} className="rounded-lg border p-4">
@@ -254,18 +266,19 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   {isScanning ? 'Scanning…' : 'Scan Now'}
                 </button>
                 
-                {/* ✅ FIXED: Show button if there are results, even without perfect scan ID */}
+                {/* ✅ FIXED: Show button if there are results and use real scan ID */}
                 {hasResults && !isScanning && (
                   <button
                     onClick={() => {
-                      // Use the best available scan ID, or create a fallback
-                      const idToUse = scanIdToUse || `fallback-${site.id}`;
-                      console.log('🔍 Clicking View Results for scan ID:', idToUse);
+                      console.log('🔍 Clicking View Results for scan ID:', availableScanId);
                       console.log('🔍 Site ID:', site.id);
                       console.log('🔍 Site last_scan_id:', site.last_scan_id);
                       console.log('🔍 Site violations:', site.total_violations);
                       console.log('🔍 Completed scan ID:', completedScans.get(site.id));
-                      handleViewResults(idToUse);
+                      
+                      // ✅ FIXED: Only use fallback if absolutely no scan ID available
+                      const scanIdToUse = availableScanId || `fallback-${site.id}`;
+                      handleViewResults(scanIdToUse);
                     }}
                     className={`rounded-md px-3 py-2 flex items-center gap-2 ${
                       isNewlyCompleted 
