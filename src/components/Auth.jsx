@@ -1,3 +1,5 @@
+// CORRECTED src/components/Auth.jsx - Properly stores authentication data
+
 import React, { useState } from 'react';
 import { Eye, EyeOff, Shield, Zap, Brain } from 'lucide-react';
 import { auth } from '../utils/api';
@@ -36,6 +38,9 @@ function Auth({ onLogin }) {
           email: formData.email,
           password: formData.password
         });
+        
+        // ✅ FIX: Store authentication data
+        auth.storeAuthData(response.token, response.user);
         onLogin(response.user);
       } else {
         // Register
@@ -49,6 +54,9 @@ function Auth({ onLogin }) {
           email: formData.email,
           password: formData.password
         });
+        
+        // ✅ FIX: Store authentication data
+        auth.storeAuthData(response.token, response.user);
         onLogin(response.user);
       }
     } catch (err) {
