@@ -5,7 +5,6 @@ import { Eye, Loader2, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 // ✅ CONFIGURABLE: Easy to tune for different site sizes
 const MAX_SCAN_MINUTES = 10;
 const POLL_EVERY_MS = 2000;
-const ERROR_RETRY_MS = 3000;
 
 export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewResults }) {
   const [list, setList] = useState([]);
@@ -16,19 +15,13 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const [scanProgress, setScanProgress] = useState(new Map());
   const [error, setError] = useState('');
 
-  // ✅ PRODUCTION-READY: Timer cleanup to prevent memory leaks
-  const timersRef = useRef(new Map());
+  // ✅ SIMPLIFIED: Basic cleanup without interfering with polling
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      // Clean up all timers on unmount/navigation
-      for (const id of timersRef.current.values()) {
-        clearTimeout(id);
-      }
-      timersRef.current.clear();
     };
   }, []);
 
@@ -73,7 +66,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     }
   };
 
-  // ✅ ENTERPRISE-GRADE: Robust scan handling with timer cleanup
+  // ✅ WORKING: Proven polling logic with enhanced UI
   const handleScan = async (site) => {
     console.log('🔄 Starting scan for site:', { id: site.id, url: site.url });
     setError('');
@@ -81,7 +74,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     setScanProgress(prev => new Map(prev).set(site.id, { 
       status: 'starting', 
       message: 'Initializing scan...', 
-      attempts: 0 
+      attempts: 0,
+      progress: 0
     }));
     
     try {
@@ -91,24 +85,6 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       
       const maxAttempts = Math.ceil((MAX_SCAN_MINUTES * 60 * 1000) / POLL_EVERY_MS);
       let attempts = 0;
-      
-      // ✅ PRODUCTION-READY: Safe timer scheduling with cleanup
-      const schedule = (ms) => {
-        if (!mountedRef.current) return;
-        const id = setTimeout(() => {
-          if (!mountedRef.current) return;
-          pollForCompletion();
-        }, ms);
-        timersRef.current.set(site.id, id);
-      };
-
-      const clearSiteTimer = () => {
-        const id = timersRef.current.get(site.id);
-        if (id) {
-          clearTimeout(id);
-          timersRef.current.delete(site.id);
-        }
-      };
 
       const cleanupScan = (delay = 2000) => {
         setTimeout(() => {
@@ -123,24 +99,27 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
             next.delete(site.id);
             return next;
           });
-          clearSiteTimer();
         }, delay);
       };
       
+      // ✅ PROVEN: Use the working polling pattern with enhanced UI updates
       const pollForCompletion = async () => {
         try {
           attempts++;
+          console.log(`🔄 Polling attempt ${attempts} for scan ${scan.id}`);
           
           // Update progress UI with elapsed time
           const elapsedMinutes = Math.floor(attempts * POLL_EVERY_MS / 60000);
           const elapsedSeconds = Math.floor((attempts * POLL_EVERY_MS % 60000) / 1000);
           
-          setScanProgress(prev => new Map(prev).set(site.id, {
-            status: 'scanning',
-            message: `Scanning... (${elapsedMinutes}m ${elapsedSeconds}s)`,
-            attempts,
-            progress: Math.min((attempts / maxAttempts) * 95, 95) // Cap at 95% until completion
-          }));
+          if (mountedRef.current) {
+            setScanProgress(prev => new Map(prev).set(site.id, {
+              status: 'scanning',
+              message: `Scanning... (${elapsedMinutes}m ${elapsedSeconds}s)`,
+              attempts,
+              progress: Math.min((attempts / maxAttempts) * 95, 95)
+            }));
+          }
           
           const meta = await scanning.getScanMeta(scan.id);
           console.log(`🔄 Scan meta (attempt ${attempts}):`, meta);
@@ -148,26 +127,24 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           if (meta && meta.status === 'done') {
             console.log('✅ Scan completed! Reloading websites from backend...');
             
-            // ✅ UX POLISH: Progress bar reaches 100% for satisfaction
-            setScanProgress(prev => new Map(prev).set(site.id, {
-              status: 'completed',
-              message: 'Scan completed successfully!',
-              attempts,
-              progress: 100
-            }));
-            
-            clearSiteTimer();
-            
-            // ✅ DELIGHTFUL: Auto-open results on completion
-            if (onViewResults) {
+            if (mountedRef.current) {
+              // ✅ UX POLISH: Progress bar reaches 100% for satisfaction
+              setScanProgress(prev => new Map(prev).set(site.id, {
+                status: 'completed',
+                message: 'Scan completed successfully!',
+                attempts,
+                progress: 100
+              }));
+              
+              // ✅ DELIGHTFUL: Auto-open results on completion
               setTimeout(() => {
-                if (mountedRef.current) {
+                if (mountedRef.current && onViewResults) {
                   onViewResults(scan.id);
                 }
-              }, 1000); // Small delay for user to see completion
+              }, 1000);
             }
             
-            await loadWebsites(); // Backend has updated website with last_scan_id
+            await loadWebsites();
             cleanupScan();
             
           } else if (meta && meta.status === 'error') {
@@ -175,51 +152,58 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
           } else if (attempts >= maxAttempts) {
             throw new Error(`Scan timed out after ${MAX_SCAN_MINUTES} minutes`);
           } else {
-            // Still running, schedule next poll
-            schedule(POLL_EVERY_MS);
+            // ✅ PROVEN: Use simple setTimeout (this was working before)
+            setTimeout(pollForCompletion, POLL_EVERY_MS);
           }
         } catch (e) {
           console.error('Polling error:', e);
           
-          // ✅ ENTERPRISE-GRADE: Handle transient HTTP errors gracefully
+          // ✅ ENHANCED: Better error handling but keep simple retry logic
           const errorMessage = String(e?.message || '');
           const isRetryableError = /502|503|429|network|fetch|timeout/i.test(errorMessage);
           
           if (isRetryableError && attempts < maxAttempts) {
-            setScanProgress(prev => new Map(prev).set(site.id, {
-              status: 'retrying',
-              message: `Temporary issue, retrying... (${attempts}/${maxAttempts})`,
-              attempts,
-              progress: Math.min((attempts / maxAttempts) * 95, 95)
-            }));
-            schedule(ERROR_RETRY_MS); // Longer delay for retries
+            if (mountedRef.current) {
+              setScanProgress(prev => new Map(prev).set(site.id, {
+                status: 'retrying',
+                message: `Connection issue, retrying... (${attempts}/${maxAttempts})`,
+                attempts,
+                progress: Math.min((attempts / maxAttempts) * 95, 95)
+              }));
+            }
+            // Retry with longer delay for errors
+            setTimeout(pollForCompletion, 3000);
             return;
           }
           
           // Permanent error or max attempts reached
           if (attempts >= maxAttempts) {
             setError(`Scan timed out after ${Math.floor(attempts * POLL_EVERY_MS / 60000)} minutes. The scan may still be running in the background.`);
-            setScanProgress(prev => new Map(prev).set(site.id, {
-              status: 'timeout',
-              message: 'Scan timed out - may still be processing',
-              attempts,
-              progress: 95
-            }));
+            if (mountedRef.current) {
+              setScanProgress(prev => new Map(prev).set(site.id, {
+                status: 'timeout',
+                message: 'Scan timed out - may still be processing',
+                attempts,
+                progress: 95
+              }));
+            }
           } else {
             setError(errorMessage || 'Scan failed');
-            setScanProgress(prev => new Map(prev).set(site.id, {
-              status: 'error',
-              message: 'Scan failed - please try again',
-              attempts,
-              progress: 0
-            }));
+            if (mountedRef.current) {
+              setScanProgress(prev => new Map(prev).set(site.id, {
+                status: 'error',
+                message: 'Scan failed - please try again',
+                attempts,
+                progress: 0
+              }));
+            }
           }
           
-          clearSiteTimer();
-          cleanupScan(5000); // Longer delay for errors
+          cleanupScan(5000);
         }
       };
       
+      // Start polling
       pollForCompletion();
       
     } catch (e) {
@@ -356,11 +340,6 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
                   <button
                     onClick={() => {
                       console.log('🔍 Clicking View Results for scan ID:', site.last_scan_id);
-                      console.log('🔍 Site data:', { 
-                        id: site.id, 
-                        last_scan_id: site.last_scan_id, 
-                        violations: site.total_violations 
-                      });
                       handleViewResults(site.last_scan_id);
                     }}
                     className="rounded-md px-3 py-2 text-sm font-medium flex items-center gap-2 border border-green-600 text-green-600 hover:bg-green-50 transition-colors"
