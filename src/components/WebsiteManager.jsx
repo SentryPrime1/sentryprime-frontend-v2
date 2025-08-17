@@ -17,10 +17,11 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   const initialLoadDone = useRef(false);
 
   const loadWebsites = async (preserveScanning = null) => {
-    // SMART DEFAULT: Preserve scanning state unless explicitly clearing or initial load
-    const shouldPreserve = preserveScanning !== null ? preserveScanning : initialLoadDone.current;
+    // BULLETPROOF LOGIC: Never clear scanning state if any scans are active
+    const hasActiveScans = scanningRef.current.size > 0;
+    const shouldPreserve = hasActiveScans || (preserveScanning !== null ? preserveScanning : initialLoadDone.current);
     
-    console.log('🔄 DEBUG: loadWebsites called, preserveScanning:', preserveScanning, 'shouldPreserve:', shouldPreserve);
+    console.log('🔄 DEBUG: loadWebsites called, preserveScanning:', preserveScanning, 'hasActiveScans:', hasActiveScans, 'shouldPreserve:', shouldPreserve);
     console.trace('🔍 DEBUG: loadWebsites call stack');
     
     setError('');
@@ -30,16 +31,16 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       console.log('🔄 DEBUG: Loaded websites:', items.length);
       setList(items);
 
-      // CRITICAL: Smart preservation logic
-      if (!shouldPreserve) {
-        console.log('🧹 DEBUG: Clearing scanning state (shouldPreserve=false)');
+      // BULLETPROOF: Never clear if scans are active, regardless of external requests
+      if (!shouldPreserve && !hasActiveScans) {
+        console.log('🧹 DEBUG: Clearing scanning state (shouldPreserve=false, no active scans)');
         setScanningIds(new Set());
         setScanProgress(new Map());
         scanningRef.current = new Set();
         progressRef.current = new Map();
       } else {
-        console.log('✅ DEBUG: Preserving scanning state (shouldPreserve=true)');
-        // Restore scanning state from refs
+        console.log('✅ DEBUG: Preserving scanning state (shouldPreserve=true OR hasActiveScans=true)');
+        // Always restore scanning state from refs
         setScanningIds(new Set(scanningRef.current));
         setScanProgress(new Map(progressRef.current));
       }
@@ -99,6 +100,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     
     console.log('📊 DEBUG: scanningIds updated, size:', newScanningIds.size);
     console.log('📊 DEBUG: scanProgress updated for site:', site.id);
+    console.log('🔒 DEBUG: Scan lock engaged - external loadWebsites calls will be ignored');
     
     setError('');
     
@@ -120,7 +122,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
         // Update progress in both state and refs
         const elapsedMinutes = Math.floor(attempts * 2000 / 60000);
         const elapsedSeconds = Math.floor((attempts * 2000 % 60000) / 1000);
-        const progressPercent = Math.min((attempts / maxAttempts) * 90, 90);
+        const progressPercent = Math.min(10 + (attempts / maxAttempts) * 80, 90); // 10% to 90%
         
         console.log(`📊 DEBUG: Updating progress to ${progressPercent}% (${elapsedMinutes}m ${elapsedSeconds}s)`);
         
@@ -178,6 +180,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
               progressRef.current = cleanProgress;
               
               console.log('🧹 DEBUG: Removed from scanningIds and scanProgress');
+              console.log('🔓 DEBUG: Scan lock released for site:', site.id);
               console.log('🔄 DEBUG: Reloading websites with preserveScanning=true');
               loadWebsites(true); // Always preserve other ongoing scans
             }, 3000);
@@ -242,6 +245,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
             cleanProgress.delete(site.id);
             setScanProgress(cleanProgress);
             progressRef.current = cleanProgress;
+            
+            console.log('🔓 DEBUG: Scan lock released for failed site:', site.id);
           }, 5000);
         }
       };
@@ -263,6 +268,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       cleanProgress.delete(site.id);
       setScanProgress(cleanProgress);
       progressRef.current = cleanProgress;
+      
+      console.log('🔓 DEBUG: Scan lock released for failed start:', site.id);
     }
   };
 
