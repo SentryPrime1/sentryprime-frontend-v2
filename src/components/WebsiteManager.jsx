@@ -14,9 +14,13 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   // Use refs to persist scanning state across re-renders and loadWebsites calls
   const scanningRef = useRef(new Set());
   const progressRef = useRef(new Map());
+  const initialLoadDone = useRef(false);
 
-  const loadWebsites = async (preserveScanning = false) => {
-    console.log('🔄 DEBUG: loadWebsites called, preserveScanning:', preserveScanning);
+  const loadWebsites = async (preserveScanning = null) => {
+    // SMART DEFAULT: Preserve scanning state unless explicitly clearing or initial load
+    const shouldPreserve = preserveScanning !== null ? preserveScanning : initialLoadDone.current;
+    
+    console.log('🔄 DEBUG: loadWebsites called, preserveScanning:', preserveScanning, 'shouldPreserve:', shouldPreserve);
     console.trace('🔍 DEBUG: loadWebsites call stack');
     
     setError('');
@@ -26,19 +30,21 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
       console.log('🔄 DEBUG: Loaded websites:', items.length);
       setList(items);
 
-      // CRITICAL: Only clear scanning state if explicitly requested
-      if (!preserveScanning) {
-        console.log('🧹 DEBUG: Clearing scanning state (preserveScanning=false)');
+      // CRITICAL: Smart preservation logic
+      if (!shouldPreserve) {
+        console.log('🧹 DEBUG: Clearing scanning state (shouldPreserve=false)');
         setScanningIds(new Set());
         setScanProgress(new Map());
         scanningRef.current = new Set();
         progressRef.current = new Map();
       } else {
-        console.log('✅ DEBUG: Preserving scanning state (preserveScanning=true)');
+        console.log('✅ DEBUG: Preserving scanning state (shouldPreserve=true)');
         // Restore scanning state from refs
         setScanningIds(new Set(scanningRef.current));
         setScanProgress(new Map(progressRef.current));
       }
+      
+      initialLoadDone.current = true;
     } catch (e) {
       console.error('❌ DEBUG: loadWebsites error:', e);
       setError(e.message || 'Failed to load websites');
@@ -48,7 +54,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
   };
 
   useEffect(() => {
-    loadWebsites();
+    // Only clear on initial load
+    loadWebsites(false);
   }, []);
 
   const handleAddWebsite = async (e) => {
@@ -60,7 +67,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     try {
       await websites.add({ url: newWebsiteUrl.trim() });
       setNewWebsiteUrl('');
-      // Preserve scanning state when adding websites
+      // Always preserve scanning state when adding websites
       await loadWebsites(true);
       onWebsiteAdded && onWebsiteAdded();
     } catch (e) {
@@ -172,7 +179,7 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
               
               console.log('🧹 DEBUG: Removed from scanningIds and scanProgress');
               console.log('🔄 DEBUG: Reloading websites with preserveScanning=true');
-              loadWebsites(true); // Preserve any other ongoing scans
+              loadWebsites(true); // Always preserve other ongoing scans
             }, 3000);
             
             return; // Stop polling
