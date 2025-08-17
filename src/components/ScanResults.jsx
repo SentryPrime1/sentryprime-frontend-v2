@@ -11,7 +11,11 @@ import {
   Calendar,
   Globe,
   ArrowLeft,
-  RefreshCw
+  RefreshCw,
+  Shield,
+  AlertCircle,
+  AlertOctagon,
+  InfoIcon
 } from 'lucide-react';
 import { scanning, dashboard } from '../utils/api';
 
@@ -22,8 +26,32 @@ export default function ScanResults({ scanId, onBack }) {
   const [error, setError] = useState('');
   const [selectedViolation, setSelectedViolation] = useState(null);
   const [showCode, setShowCode] = useState(false);
-  const [fallbackScans, setFallbackScans] = useState([]); // ✅ NEW: Store available scans for fallback
-  const [showFallback, setShowFallback] = useState(false); // ✅ NEW: Show fallback scan list
+  const [fallbackScans, setFallbackScans] = useState([]);
+  const [showFallback, setShowFallback] = useState(false);
+
+  // ✅ NEW: Calculate violation breakdown by severity
+  const getViolationBreakdown = () => {
+    const breakdown = {
+      critical: 0,
+      serious: 0,
+      moderate: 0,
+      minor: 0,
+      unknown: 0
+    };
+
+    violations.forEach(violation => {
+      const impact = violation.impact || 'unknown';
+      if (breakdown.hasOwnProperty(impact)) {
+        breakdown[impact]++;
+      } else {
+        breakdown.unknown++;
+      }
+    });
+
+    return breakdown;
+  };
+
+  const breakdown = getViolationBreakdown();
 
   useEffect(() => {
     if (!scanId) return;
@@ -37,16 +65,13 @@ export default function ScanResults({ scanId, onBack }) {
         if (!cancelled) setMeta(r);
       } catch (e) {
         console.error('Failed to fetch scan meta:', e);
-        // Don't set error here, let the main polling handle it
       }
     };
 
     const fetchResultsWithPolling = async () => {
-      // ✅ FIXED: Detect fallback scan IDs and handle them differently
       if (scanId.startsWith('fallback-')) {
         console.log('🔍 Detected fallback scan ID, will show available scans instead');
         
-        // Try to get available scans for this user
         try {
           const scans = await dashboard.getScans();
           if (!cancelled) {
@@ -63,8 +88,7 @@ export default function ScanResults({ scanId, onBack }) {
         return;
       }
 
-      // ✅ IMPROVED: Reduced polling attempts and better error handling
-      for (let i = 0; i < 15; i++) { // Reduced from 60 to 15 attempts (30 seconds max)
+      for (let i = 0; i < 15; i++) {
         try {
           const res = await scanning.getScanResults(scanId);
           if (res && Array.isArray(res.violations)) {
@@ -77,7 +101,6 @@ export default function ScanResults({ scanId, onBack }) {
         } catch (e) {
           console.log(`Poll attempt ${i + 1}: ${e.message}`);
           
-          // ✅ NEW: After several failed attempts, try to show available scans
           if (i > 5 && e.message.includes('404')) {
             console.log('🔍 Scan not found after multiple attempts, showing available scans');
             try {
@@ -96,7 +119,6 @@ export default function ScanResults({ scanId, onBack }) {
         await new Promise(r => setTimeout(r, 2000));
       }
       
-      // ✅ IMPROVED: Better timeout handling with fallback option
       if (!cancelled) {
         try {
           const scans = await dashboard.getScans();
@@ -140,25 +162,37 @@ export default function ScanResults({ scanId, onBack }) {
 
   const getSeverityIcon = (severity) => {
     switch (severity) {
-      case 'critical': return AlertTriangle;
+      case 'critical': return AlertOctagon;
       case 'serious': return AlertTriangle;
-      case 'moderate': return Info;
-      case 'minor': return Info;
+      case 'moderate': return AlertCircle;
+      case 'minor': return InfoIcon;
       default: return Info;
     }
   };
 
-  // ✅ NEW: Handle scan selection from fallback list
+  // ✅ NEW: Get breakdown card styling
+  const getBreakdownCardStyle = (severity, count) => {
+    const baseStyle = "rounded-lg p-4 border-2 transition-all duration-200 hover:shadow-md";
+    
+    if (count === 0) {
+      return `${baseStyle} bg-gray-50 border-gray-200 opacity-60`;
+    }
+    
+    switch (severity) {
+      case 'critical': return `${baseStyle} bg-red-50 border-red-200 hover:bg-red-100`;
+      case 'serious': return `${baseStyle} bg-orange-50 border-orange-200 hover:bg-orange-100`;
+      case 'moderate': return `${baseStyle} bg-yellow-50 border-yellow-200 hover:bg-yellow-100`;
+      case 'minor': return `${baseStyle} bg-blue-50 border-blue-200 hover:bg-blue-100`;
+      default: return `${baseStyle} bg-gray-50 border-gray-200 hover:bg-gray-100`;
+    }
+  };
+
   const handleSelectScan = (scan) => {
     console.log('🔍 User selected scan from fallback list:', scan.id);
-    // This will trigger a re-render with the new scan ID
     window.location.hash = `#scan-${scan.id}`;
-    // Or if you have a proper router, navigate to the scan
-    // For now, we'll just reload the component with the new ID
     setLoading(true);
     setError('');
     setShowFallback(false);
-    // The parent component should handle this by updating the scanId prop
   };
 
   if (!scanId) {
@@ -199,7 +233,6 @@ export default function ScanResults({ scanId, onBack }) {
         </div>
       )}
 
-      {/* ✅ NEW: Improved error handling with fallback scan list */}
       {(error || showFallback) && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center space-x-2 mb-3">
@@ -271,6 +304,85 @@ export default function ScanResults({ scanId, onBack }) {
                 <div>
                   <p className="text-sm text-gray-500">Total Issues</p>
                   <p className="font-medium text-gray-900 text-2xl">{violations.length}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NEW: Violation Breakdown Summary */}
+      {!loading && !error && !showFallback && violations.length > 0 && (
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <div className="flex items-center space-x-2 mb-4">
+              <Shield className="h-6 w-6 text-gray-600" />
+              <h3 className="text-lg font-medium text-gray-900">Violation Breakdown</h3>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Critical */}
+              <div className={getBreakdownCardStyle('critical', breakdown.critical)}>
+                <div className="flex items-center space-x-3">
+                  <AlertOctagon className="h-8 w-8 text-red-600" />
+                  <div>
+                    <p className="text-2xl font-bold text-red-600">{breakdown.critical}</p>
+                    <p className="text-sm font-medium text-red-700">Critical</p>
+                    <p className="text-xs text-red-600">Fix immediately</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Serious */}
+              <div className={getBreakdownCardStyle('serious', breakdown.serious)}>
+                <div className="flex items-center space-x-3">
+                  <AlertTriangle className="h-8 w-8 text-orange-600" />
+                  <div>
+                    <p className="text-2xl font-bold text-orange-600">{breakdown.serious}</p>
+                    <p className="text-sm font-medium text-orange-700">Serious</p>
+                    <p className="text-xs text-orange-600">High priority</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Moderate */}
+              <div className={getBreakdownCardStyle('moderate', breakdown.moderate)}>
+                <div className="flex items-center space-x-3">
+                  <AlertCircle className="h-8 w-8 text-yellow-600" />
+                  <div>
+                    <p className="text-2xl font-bold text-yellow-600">{breakdown.moderate}</p>
+                    <p className="text-sm font-medium text-yellow-700">Moderate</p>
+                    <p className="text-xs text-yellow-600">Medium priority</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Minor */}
+              <div className={getBreakdownCardStyle('minor', breakdown.minor)}>
+                <div className="flex items-center space-x-3">
+                  <InfoIcon className="h-8 w-8 text-blue-600" />
+                  <div>
+                    <p className="text-2xl font-bold text-blue-600">{breakdown.minor}</p>
+                    <p className="text-sm font-medium text-blue-700">Minor</p>
+                    <p className="text-xs text-blue-600">Low priority</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Priority Recommendation */}
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <Brain className="h-5 w-5 text-gray-600 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Recommended Priority:</p>
+                  <p className="text-sm text-gray-600">
+                    {breakdown.critical > 0 && "Start with critical issues - these prevent users from accessing content."}
+                    {breakdown.critical === 0 && breakdown.serious > 0 && "Focus on serious issues first - these significantly impact user experience."}
+                    {breakdown.critical === 0 && breakdown.serious === 0 && breakdown.moderate > 0 && "Address moderate issues to improve overall accessibility."}
+                    {breakdown.critical === 0 && breakdown.serious === 0 && breakdown.moderate === 0 && breakdown.minor > 0 && "Great job! Only minor issues remain - these are easy wins for better accessibility."}
+                    {violations.length === 0 && "Excellent! No accessibility violations found."}
+                  </p>
                 </div>
               </div>
             </div>
