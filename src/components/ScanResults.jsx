@@ -12,12 +12,9 @@ import {
   Globe,
   ArrowLeft,
   RefreshCw,
-  Shield,
-  AlertCircle,
   AlertOctagon,
-  InfoIcon,
-  X,
-  Filter
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { scanning, dashboard } from '../utils/api';
 
@@ -31,33 +28,8 @@ export default function ScanResults({ scanId, onBack }) {
   const [fallbackScans, setFallbackScans] = useState([]);
   const [showFallback, setShowFallback] = useState(false);
   
-  // Filter state
-  const [selectedFilter, setSelectedFilter] = useState('all'); // 'all', 'critical', 'serious', 'moderate', 'minor'
-
-  // ✅ OPTIMIZED: Memoized violation breakdown with impact normalization
-  const breakdown = useMemo(() => {
-    const b = { critical: 0, serious: 0, moderate: 0, minor: 0, unknown: 0 };
-    for (const v of violations) {
-      const key = (v.impact || 'unknown').toLowerCase();
-      b[key] = (b[key] ?? 0) + 1;
-    }
-    return b;
-  }, [violations]);
-
-  // ✅ OPTIMIZED: Memoized filtered violations with normalized comparison
-  const filteredViolations = useMemo(() => {
-    if (selectedFilter === 'all') return violations;
-    return violations.filter(v => (v.impact || 'unknown').toLowerCase() === selectedFilter);
-  }, [violations, selectedFilter]);
-
-  // ✅ OPTIMIZED: Memoized sorted violations with normalized impact comparison
-  const sortedViolations = useMemo(() => {
-    const order = { critical: 0, serious: 1, moderate: 2, minor: 3, unknown: 4 };
-    return [...filteredViolations].sort((a, b) =>
-      (order[(a.impact || 'unknown').toLowerCase()] ?? 4) -
-      (order[(b.impact || 'unknown').toLowerCase()] ?? 4)
-    );
-  }, [filteredViolations]);
+  // ✅ NEW: Interactive filtering state
+  const [selectedFilter, setSelectedFilter] = useState(null);
 
   useEffect(() => {
     if (!scanId) return;
@@ -156,6 +128,121 @@ export default function ScanResults({ scanId, onBack }) {
     return () => { cancelled = true; };
   }, [scanId]);
 
+  // ✅ NEW: Memoized violation breakdown calculation
+  const breakdown = useMemo(() => {
+    const result = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+    
+    for (const violation of violations) {
+      const impact = (violation.impact ?? 'minor').toLowerCase();
+      if (result.hasOwnProperty(impact)) {
+        result[impact]++;
+      }
+    }
+    
+    return result;
+  }, [violations]);
+
+  // ✅ NEW: Memoized filtered violations
+  const filteredViolations = useMemo(() => {
+    if (!selectedFilter) return violations;
+    
+    return violations.filter(violation => {
+      const impact = (violation.impact ?? 'minor').toLowerCase();
+      return impact === selectedFilter;
+    });
+  }, [violations, selectedFilter]);
+
+  // ✅ NEW: Memoized sorted violations
+  const sortedViolations = useMemo(() => {
+    const impactOrder = { critical: 0, serious: 1, moderate: 2, minor: 3 };
+    
+    return [...filteredViolations].sort((a, b) => {
+      const aImpact = (a.impact ?? 'minor').toLowerCase();
+      const bImpact = (b.impact ?? 'minor').toLowerCase();
+      return (impactOrder[aImpact] ?? 3) - (impactOrder[bImpact] ?? 3);
+    });
+  }, [filteredViolations]);
+
+  // ✅ NEW: Dynamic header text
+  const getHeaderText = () => {
+    if (!selectedFilter) {
+      return `${violations.length} accessibility violations found`;
+    }
+    
+    const count = breakdown[selectedFilter] ?? 0;
+    return `${count} ${selectedFilter} violations found`;
+  };
+
+  // ✅ NEW: Render breakdown card with full accessibility support
+  const renderBreakdownCard = (severity, icon, label, description, colorClass) => {
+    const Icon = icon;
+    const count = breakdown[severity];
+    const isActive = selectedFilter === severity;
+    const isEmpty = count === 0;
+
+    const handleClick = () => {
+      if (isEmpty) return;
+      
+      if (isActive) {
+        setSelectedFilter(null); // Toggle off if already selected
+      } else {
+        setSelectedFilter(severity);
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (isEmpty) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleClick();
+      }
+    };
+
+    return (
+      <div
+        onClick={isEmpty ? undefined : handleClick}
+        onKeyDown={handleKeyDown}
+        tabIndex={isEmpty ? -1 : 0}
+        role="button"
+        aria-pressed={isActive}
+        aria-disabled={isEmpty}
+        className={`
+          relative p-4 rounded-lg border-2 transition-all duration-200
+          ${isEmpty 
+            ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-60' 
+            : 'bg-white border-gray-200 cursor-pointer hover:scale-[1.02] hover:shadow-md'
+          }
+          ${isActive 
+            ? `ring-2 ring-offset-2 ${colorClass.includes('red') ? 'ring-red-500' : 
+                colorClass.includes('orange') ? 'ring-orange-500' :
+                colorClass.includes('yellow') ? 'ring-yellow-500' : 'ring-blue-500'} shadow-lg scale-[1.02]`
+            : ''
+          }
+        `}
+      >
+        {isActive && (
+          <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-medium">
+            Active Filter
+          </div>
+        )}
+        
+        <div className="flex items-center space-x-3">
+          <div className={`p-2 rounded-lg ${colorClass}`}>
+            <Icon className="h-6 w-6" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="text-2xl font-bold text-gray-900">{count}</span>
+              {isActive && <span className="text-blue-600">🔍</span>}
+            </div>
+            <p className="font-medium text-gray-900">{label}</p>
+            <p className="text-sm text-gray-600">{description}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const getSeverityColor = (severity) => {
     switch (severity) {
       case 'critical': return 'text-red-600 bg-red-100 border-red-200';
@@ -168,97 +255,12 @@ export default function ScanResults({ scanId, onBack }) {
 
   const getSeverityIcon = (severity) => {
     switch (severity) {
-      case 'critical': return AlertOctagon;
+      case 'critical': return AlertTriangle;
       case 'serious': return AlertTriangle;
-      case 'moderate': return AlertCircle;
-      case 'minor': return InfoIcon;
+      case 'moderate': return Info;
+      case 'minor': return Info;
       default: return Info;
     }
-  };
-
-  // ✅ IMPROVED: Fixed Tailwind scale class and better disabled state
-  const getBreakdownCardStyle = (severity, count, isActive) => {
-    const baseStyle = "rounded-lg p-4 border-2 transition-all duration-200 transform";
-    
-    if (count === 0) {
-      return `${baseStyle} bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed`;
-    }
-    
-    const activeStyle = isActive ? "ring-2 ring-offset-2 scale-105 shadow-lg" : "hover:shadow-md hover:scale-[1.02]";
-    const interactiveStyle = "cursor-pointer";
-    
-    switch (severity) {
-      case 'critical': 
-        return `${baseStyle} ${activeStyle} ${interactiveStyle} bg-red-50 border-red-200 hover:bg-red-100 ${isActive ? 'ring-red-300 bg-red-100 border-red-300' : ''}`;
-      case 'serious': 
-        return `${baseStyle} ${activeStyle} ${interactiveStyle} bg-orange-50 border-orange-200 hover:bg-orange-100 ${isActive ? 'ring-orange-300 bg-orange-100 border-orange-300' : ''}`;
-      case 'moderate': 
-        return `${baseStyle} ${activeStyle} ${interactiveStyle} bg-yellow-50 border-yellow-200 hover:bg-yellow-100 ${isActive ? 'ring-yellow-300 bg-yellow-100 border-yellow-300' : ''}`;
-      case 'minor': 
-        return `${baseStyle} ${activeStyle} ${interactiveStyle} bg-blue-50 border-blue-200 hover:bg-blue-100 ${isActive ? 'ring-blue-300 bg-blue-100 border-blue-300' : ''}`;
-      default: 
-        return `${baseStyle} ${activeStyle} ${interactiveStyle} bg-gray-50 border-gray-200 hover:bg-gray-100 ${isActive ? 'ring-gray-300 bg-gray-100 border-gray-300' : ''}`;
-    }
-  };
-
-  // Handle filter selection
-  const handleFilterSelect = (severity) => {
-    if (breakdown[severity] === 0) return; // Don't allow clicking on empty categories
-    setSelectedFilter(severity === selectedFilter ? 'all' : severity);
-  };
-
-  // ✅ IMPROVED: Keyboard event handler for accessibility
-  const handleKeyDown = (e, severity) => {
-    if (breakdown[severity] === 0) return;
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleFilterSelect(severity);
-    }
-  };
-
-  // Get filter display text
-  const getFilterDisplayText = () => {
-    if (selectedFilter === 'all') {
-      return `${violations.length} accessibility violations found`;
-    }
-    const count = breakdown[selectedFilter] || 0;
-    const severityText = selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1);
-    return `${count} ${selectedFilter} violations found`;
-  };
-
-  // ✅ NEW: Render breakdown card with full accessibility support
-  const renderBreakdownCard = (severity, icon: React.ComponentType, label, description, colorClass) => {
-    const Icon = icon;
-    const count = breakdown[severity];
-    const isActive = selectedFilter === severity;
-    const isEmpty = count === 0;
-
-    return (
-      <div
-        className={getBreakdownCardStyle(severity, count, isActive)}
-        onClick={isEmpty ? undefined : () => handleFilterSelect(severity)}
-        onKeyDown={isEmpty ? undefined : (e) => handleKeyDown(e, severity)}
-        aria-pressed={isActive}
-        aria-disabled={isEmpty}
-        role="button"
-        tabIndex={isEmpty ? -1 : 0}
-      >
-        <div className="flex items-center space-x-3">
-          <Icon className={`h-8 w-8 ${colorClass}`} />
-          <div>
-            <p className={`text-2xl font-bold ${colorClass}`}>{count}</p>
-            <p className={`text-sm font-medium ${colorClass.replace('text-', 'text-').replace('-600', '-700')}`}>{label}</p>
-            <p className={`text-xs ${colorClass}`}>{description}</p>
-          </div>
-        </div>
-        {isActive && (
-          <div className="mt-2 flex items-center space-x-1">
-            <Filter className={`h-3 w-3 ${colorClass}`} />
-            <span className={`text-xs ${colorClass} font-medium`}>Active Filter</span>
-          </div>
-        )}
-      </div>
-    );
   };
 
   const handleSelectScan = (scan) => {
@@ -297,6 +299,17 @@ export default function ScanResults({ scanId, onBack }) {
             <p className="text-gray-600 mt-1">Detailed accessibility analysis</p>
           </div>
         </div>
+        
+        {/* ✅ NEW: Show All button when filtering */}
+        {selectedFilter && (
+          <button
+            onClick={() => setSelectedFilter(null)}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <X className="h-4 w-4 mr-2" />
+            Show All
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -385,74 +398,57 @@ export default function ScanResults({ scanId, onBack }) {
         </div>
       )}
 
-      {/* ✅ OPTIMIZED: Interactive Violation Breakdown Summary */}
+      {/* ✅ NEW: Interactive Violation Breakdown */}
       {!loading && !error && !showFallback && violations.length > 0 && (
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <Shield className="h-6 w-6 text-gray-600" />
-                <h3 className="text-lg font-medium text-gray-900">Violation Breakdown</h3>
-              </div>
-              
-              {/* Active filter indicator and clear button */}
-              {selectedFilter !== 'all' && (
-                <button
-                  onClick={() => setSelectedFilter('all')}
-                  className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  <X className="h-4 w-4 mr-1" />
-                  Show All
-                </button>
+        <>
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">📊 Violation Breakdown</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {renderBreakdownCard(
+                'critical',
+                AlertOctagon,
+                'Critical',
+                'Fix immediately',
+                'text-red-600 bg-red-100 border-red-200'
+              )}
+              {renderBreakdownCard(
+                'serious',
+                AlertTriangle,
+                'Serious',
+                'High priority',
+                'text-orange-600 bg-orange-100 border-orange-200'
+              )}
+              {renderBreakdownCard(
+                'moderate',
+                AlertCircle,
+                'Moderate',
+                'Medium priority',
+                'text-yellow-600 bg-yellow-100 border-yellow-200'
+              )}
+              {renderBreakdownCard(
+                'minor',
+                Info,
+                'Minor',
+                'Low priority',
+                'text-blue-600 bg-blue-100 border-blue-200'
               )}
             </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {/* ✅ IMPROVED: Accessible breakdown cards */}
-              {renderBreakdownCard('critical', AlertOctagon, 'Critical', 'Fix immediately', 'text-red-600')}
-              {renderBreakdownCard('serious', AlertTriangle, 'Serious', 'High priority', 'text-orange-600')}
-              {renderBreakdownCard('moderate', AlertCircle, 'Moderate', 'Medium priority', 'text-yellow-600')}
-              {renderBreakdownCard('minor', InfoIcon, 'Minor', 'Low priority', 'text-blue-600')}
-            </div>
-
-            {/* Priority Recommendation */}
-            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-start space-x-2">
-                <Brain className="h-5 w-5 text-gray-600 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {selectedFilter === 'all' ? 'Recommended Priority:' : `Filtering by ${selectedFilter} violations:`}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {selectedFilter === 'all' && breakdown.critical > 0 && "Start with critical issues - these prevent users from accessing content."}
-                    {selectedFilter === 'all' && breakdown.critical === 0 && breakdown.serious > 0 && "Focus on serious issues first - these significantly impact user experience."}
-                    {selectedFilter === 'all' && breakdown.critical === 0 && breakdown.serious === 0 && breakdown.moderate > 0 && "Address moderate issues to improve overall accessibility."}
-                    {selectedFilter === 'all' && breakdown.critical === 0 && breakdown.serious === 0 && breakdown.moderate === 0 && breakdown.minor > 0 && "Great job! Only minor issues remain - these are easy wins for better accessibility."}
-                    {selectedFilter === 'all' && violations.length === 0 && "Excellent! No accessibility violations found."}
-                    {selectedFilter === 'critical' && "These issues prevent users from accessing content and must be fixed immediately."}
-                    {selectedFilter === 'serious' && "These issues significantly impact user experience and should be prioritized."}
-                    {selectedFilter === 'moderate' && "These issues affect accessibility but don't completely block users."}
-                    {selectedFilter === 'minor' && "These are minor improvements that enhance overall accessibility."}
-                  </p>
-                </div>
-              </div>
+            {/* ✅ NEW: Smart recommendations based on breakdown */}
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-800">
+                💡 <strong>Recommended Priority:</strong> {
+                  breakdown.critical > 0 ? 'Start with critical issues - these prevent users from accessing content.' :
+                  breakdown.serious > 0 ? 'Focus on serious issues - these significantly impact user experience.' :
+                  breakdown.moderate > 0 ? 'Address moderate issues - these create barriers for some users.' :
+                  'Great job! Only minor issues remain - these are easy wins for better accessibility.'
+                }
+              </p>
             </div>
           </div>
-        </div>
-      )}
 
-      {!loading && !error && !showFallback && violations.length > 0 && (
-        <>
-          {/* Dynamic violation count with filter info */}
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-600">
-              {getFilterDisplayText()}
-            </div>
-            {selectedFilter !== 'all' && (
-              <div className="text-xs text-gray-500">
-                Click "Show All" to see all {violations.length} violations
-              </div>
-            )}
+          <div className="text-sm text-gray-600 mb-4">
+            {getHeaderText()}
           </div>
           
           <div className="space-y-4">
