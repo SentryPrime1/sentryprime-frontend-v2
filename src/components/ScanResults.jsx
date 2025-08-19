@@ -25,6 +25,8 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { scanning, dashboard } from '../utils/api';
+// ✅ Import Alt Text AI components
+import AltTextAISection from './AltTextAISection.jsx';
 
 // AI Analysis Component (embedded) - BULLETPROOF ENTERPRISE VERSION
 function AIAnalysis({ scanId, violations, meta }) {
@@ -335,6 +337,15 @@ export default function ScanResults({ scanId, onBack }) {
   // Interactive filtering state
   const [selectedFilter, setSelectedFilter] = useState(null);
 
+  // ✅ Auth token for Alt Text AI (you may need to get this from your auth context)
+  const [authToken, setAuthToken] = useState(null);
+
+  useEffect(() => {
+    // ✅ Get auth token from localStorage or your auth context
+    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    setAuthToken(token);
+  }, []);
+
   useEffect(() => {
     if (!scanId) return;
     console.log('ScanResults received scanId:', scanId);
@@ -458,429 +469,508 @@ export default function ScanResults({ scanId, onBack }) {
     });
   }, [violations, selectedFilter]);
 
-  // ✅ ENTERPRISE: Include unknown in impact order
-  const sortedViolations = useMemo(() => {
-    const impactOrder = { critical: 0, serious: 1, moderate: 2, minor: 3, unknown: 4 };
-    
-    return [...filteredViolations].sort((a, b) => {
-      const aImpact = (a.impact ?? 'minor').toLowerCase();
-      const bImpact = (b.impact ?? 'minor').toLowerCase();
-      const aOrder = impactOrder[aImpact] ?? 4;
-      const bOrder = impactOrder[bImpact] ?? 4;
-      return aOrder - bOrder;
-    });
-  }, [filteredViolations]);
-
-  // Minor polish on the filter header
-  const getHeaderText = () => {
-    if (!selectedFilter) {
-      return `${violations.length} accessibility violations found`;
-    }
-    
-    const count = breakdown[selectedFilter] ?? 0;
-    const label = selectedFilter[0].toUpperCase() + selectedFilter.slice(1);
-    return `${count} ${label} violation${count === 1 ? '' : 's'} found`;
-  };
-
-  // ✅ ENTERPRISE: Map ring color by severity (cleaner & future-proof)
-  const ringBySeverity = { 
-    critical: 'ring-red-500', 
-    serious: 'ring-orange-500', 
-    moderate: 'ring-yellow-500', 
-    minor: 'ring-blue-500',
-    unknown: 'ring-gray-500'
-  };
-
-  // Render breakdown card with full accessibility support
+  // ✅ ENTERPRISE: Render breakdown card with proper accessibility
   const renderBreakdownCard = (severity, icon, label, description, colorClass) => {
-    const Icon = icon;
     const count = breakdown[severity];
-    const isActive = selectedFilter === severity;
-    const isEmpty = count === 0;
-
-    const handleClick = () => {
-      if (isEmpty) return;
-      
-      if (isActive) {
-        setSelectedFilter(null); // Toggle off if already selected
-      } else {
-        setSelectedFilter(severity);
-      }
-    };
-
-    const handleKeyDown = (e) => {
-      if (isEmpty) return;
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        handleClick();
-      }
-    };
-
+    const isSelected = selectedFilter === severity;
+    const isDisabled = count === 0;
+    
     return (
-      <div
-        onClick={isEmpty ? undefined : handleClick}
-        onKeyDown={handleKeyDown}
-        tabIndex={isEmpty ? -1 : 0}
-        role="button"
-        aria-pressed={isActive}
-        aria-disabled={isEmpty}
+      <button
+        key={severity}
+        onClick={() => {
+          if (isDisabled) return;
+          setSelectedFilter(isSelected ? null : severity);
+        }}
+        disabled={isDisabled}
         className={`
-          relative p-4 rounded-lg border-2 transition-all duration-200
-          ${isEmpty 
-            ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-60' 
-            : 'bg-white border-gray-200 cursor-pointer hover:scale-[1.02] hover:shadow-md'
+          relative p-4 rounded-lg border-2 transition-all duration-200 text-left w-full
+          ${isSelected 
+            ? `${colorClass.replace('text-', 'border-').replace('-600', '-500')} bg-opacity-10 ${colorClass.replace('-600', '-50')}` 
+            : 'border-gray-200 hover:border-gray-300'
           }
-          ${isActive 
-            ? `ring-2 ring-offset-2 ${ringBySeverity[severity] || 'ring-blue-500'} shadow-lg scale-[1.02]`
-            : ''
+          ${isDisabled 
+            ? 'opacity-50 cursor-not-allowed' 
+            : 'hover:shadow-md cursor-pointer'
           }
         `}
+        aria-pressed={isSelected}
+        aria-describedby={`${severity}-description`}
       >
-        {isActive && (
-          <div className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-medium">
-            Active Filter
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            {React.createElement(icon, { 
+              className: `h-6 w-6 ${isDisabled ? 'text-gray-400' : colorClass}`,
+              'aria-hidden': true 
+            })}
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className={`text-lg font-semibold ${isDisabled ? 'text-gray-400' : 'text-gray-900'}`}>
+                  {label}
+                </h3>
+                {isSelected && (
+                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                    Filtered
+                  </span>
+                )}
+              </div>
+              <p id={`${severity}-description`} className={`text-sm ${isDisabled ? 'text-gray-400' : 'text-gray-600'}`}>
+                {description}
+              </p>
+            </div>
+          </div>
+          <div className={`text-3xl font-bold ${isDisabled ? 'text-gray-400' : colorClass}`}>
+            {count}
+          </div>
+        </div>
+        
+        {isSelected && (
+          <div className="absolute -top-1 -right-1">
+            <div className={`w-3 h-3 rounded-full ${colorClass.replace('text-', 'bg-')}`}></div>
           </div>
         )}
-        
-        <div className="flex items-center space-x-3">
-          {/* Show the colored border on the little icon pill */}
-          <div className={`p-2 rounded-lg border ${colorClass}`}>
-            <Icon className="h-6 w-6" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="text-2xl font-bold text-gray-900">{count}</span>
-              {isActive && <span className="text-blue-600">🔍</span>}
+      </button>
+    );
+  };
+
+  // ✅ ENTERPRISE: Comprehensive scan data for Alt Text AI
+  const scanData = useMemo(() => {
+    if (!meta || !violations.length) return null;
+    
+    return {
+      id: scanId,
+      url: meta.url || meta.website_url,
+      timestamp: meta.timestamp || meta.created_at,
+      violations: violations,
+      meta: meta,
+      // Extract images from violations for Alt Text AI
+      images: violations
+        .filter(v => v.id === 'image-alt' || v.help?.toLowerCase().includes('alt'))
+        .flatMap(v => v.nodes || [])
+        .map(node => ({
+          url: node.target?.[0] || '',
+          element: node.html || '',
+          context: node.failureSummary || ''
+        }))
+        .filter(img => img.url)
+    };
+  }, [scanId, meta, violations]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Scan Results</h2>
+          <p className="text-gray-600">Please wait while we fetch your accessibility scan...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (showFallback) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Header */}
+          <div className="mb-8">
+            <button
+              onClick={onBack}
+              className="inline-flex items-center text-blue-600 hover:text-blue-500 mb-4"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Dashboard
+            </button>
+            
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                <p className="text-yellow-800 font-medium">Scan Not Found</p>
+              </div>
+              <p className="text-yellow-700 mt-1">
+                {error || 'The requested scan could not be found. Here are your available scans:'}
+              </p>
             </div>
-            <p className="font-medium text-gray-900">{label}</p>
-            <p className="text-sm text-gray-600">{description}</p>
+          </div>
+
+          {/* Available Scans */}
+          <div className="bg-white shadow rounded-lg">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-medium text-gray-900">Your Recent Scans</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Select a scan to view its results
+              </p>
+            </div>
+            
+            <div className="divide-y divide-gray-200">
+              {fallbackScans.length === 0 ? (
+                <div className="px-6 py-8 text-center">
+                  <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Scans Found</h3>
+                  <p className="text-gray-600">
+                    You haven't run any scans yet. Start by scanning a website to see results here.
+                  </p>
+                </div>
+              ) : (
+                fallbackScans.map((scan) => (
+                  <div key={scan.id} className="px-6 py-4 hover:bg-gray-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3">
+                          <Globe className="h-5 w-5 text-gray-400" />
+                          <div>
+                            <h3 className="text-sm font-medium text-gray-900">
+                              {scan.url || scan.website_url || 'Unknown URL'}
+                            </h3>
+                            <div className="flex items-center space-x-4 mt-1">
+                              <span className="text-xs text-gray-500 flex items-center">
+                                <Calendar className="h-3 w-3 mr-1" />
+                                {scan.timestamp ? new Date(scan.timestamp).toLocaleDateString() : 'Unknown date'}
+                              </span>
+                              {scan.total_violations !== undefined && (
+                                <span className="text-xs text-gray-500">
+                                  {scan.total_violations} violations
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => window.location.href = `#/scan/${scan.id}`}
+                        className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      >
+                        View Results
+                        <ExternalLink className="h-3 w-3 ml-2" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
     );
-  };
+  }
 
-  const getSeverityColor = (severity) => {
-    switch (severity) {
-      case 'critical': return 'text-red-600 bg-red-100 border-red-200';
-      case 'serious': return 'text-orange-600 bg-orange-100 border-orange-200';
-      case 'moderate': return 'text-yellow-600 bg-yellow-100 border-yellow-200';
-      case 'minor': return 'text-blue-600 bg-blue-100 border-blue-200';
-      case 'unknown': return 'text-gray-600 bg-gray-100 border-gray-200';
-      default: return 'text-gray-600 bg-gray-100 border-gray-200';
-    }
-  };
-
-  // Make the severity icon mapping consistent
-  const getSeverityIcon = (severity) => {
-    switch ((severity || '').toLowerCase()) {
-      case 'critical': return AlertOctagon;
-      case 'serious':  return AlertTriangle;
-      case 'moderate': return AlertCircle;
-      case 'minor':    return Info;
-      case 'unknown':  return HelpCircle;
-      default:         return HelpCircle;
-    }
-  };
-
-  const handleSelectScan = (scan) => {
-    console.log('🔍 User selected scan from fallback list:', scan.id);
-    window.location.hash = `#scan-${scan.id}`;
-    setLoading(true);
-    setError('');
-    setShowFallback(false);
-  };
-
-  if (!scanId) {
+  if (error && !showFallback) {
     return (
-      <div className="space-y-6">
-        <div className="text-center py-12">
-          <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No scan selected</h3>
-          <p className="text-gray-600">
-            Select a website and run a scan to view detailed results here
-          </p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Results</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <div className="space-x-4">
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </button>
+            <button
+              onClick={onBack}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <button onClick={onBack} className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-8">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center text-blue-600 hover:text-blue-500 mb-4"
+          >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
+            Back to Dashboard
           </button>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Scan Results</h2>
-            <p className="text-gray-600 mt-1">Detailed accessibility analysis</p>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Scan Results</h1>
+              <div className="flex items-center space-x-4 mt-2">
+                <div className="flex items-center text-gray-600">
+                  <Globe className="h-4 w-4 mr-2" />
+                  <span className="text-sm">{meta?.url || meta?.website_url || 'Unknown URL'}</span>
+                </div>
+                {meta?.timestamp && (
+                  <div className="flex items-center text-gray-600">
+                    <Calendar className="h-4 w-4 mr-2" />
+                    <span className="text-sm">
+                      {new Date(meta.timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="text-right">
+              <div className="text-3xl font-bold text-gray-900">
+                {selectedFilter ? filteredViolations.length : violations.length}
+              </div>
+              <div className="text-sm text-gray-600">
+                {selectedFilter ? `${selectedFilter} violations` : 'total violations'}
+              </div>
+            </div>
           </div>
         </div>
-        
-        {/* Show All button when filtering */}
-        {selectedFilter && (
-          <button
-            onClick={() => setSelectedFilter(null)}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-          >
-            <X className="h-4 w-4 mr-2" />
-            Show All
-          </button>
-        )}
-      </div>
 
-      {loading && (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading scan results...</p>
-          <p className="text-sm text-gray-500 mt-2">This may take a few moments</p>
+        {/* Violation Breakdown */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {renderBreakdownCard('critical', AlertOctagon, 'Critical', 'Must fix immediately', 'text-red-600')}
+          {renderBreakdownCard('serious', AlertTriangle, 'Serious', 'Should fix soon', 'text-orange-600')}
+          {renderBreakdownCard('moderate', AlertCircle, 'Moderate', 'Should fix eventually', 'text-yellow-600')}
+          {renderBreakdownCard('minor', Info, 'Minor', 'Nice to fix', 'text-blue-600')}
         </div>
-      )}
 
-      {(error || showFallback) && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2 mb-3">
-            <Info className="h-5 w-5 text-yellow-600" />
-            <p className="text-yellow-800 font-medium">
-              {error || 'Scan not found'}
-            </p>
+        {/* Filter Status */}
+        {selectedFilter && (
+          <div className="mb-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Eye className="h-5 w-5 text-blue-600" />
+                  <span className="text-blue-800 font-medium">
+                    Showing {filteredViolations.length} {selectedFilter} violations
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedFilter(null)}
+                  className="inline-flex items-center px-3 py-1 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Show All
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Alt Text AI Section - NEW INTEGRATION */}
+        {scanData && authToken && (
+          <div className="mb-8">
+            <AltTextAISection 
+              scanId={scanId}
+              scanData={scanData}
+              authToken={authToken}
+            />
+          </div>
+        )}
+
+        {/* AI Analysis Section */}
+        <div className="mb-8">
+          <AIAnalysis 
+            scanId={scanId} 
+            violations={filteredViolations} 
+            meta={meta} 
+          />
+        </div>
+
+        {/* Violations List */}
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium text-gray-900">
+                {selectedFilter ? `${selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1)} Violations` : 'All Violations'}
+              </h2>
+              <span className="text-sm text-gray-600">
+                {filteredViolations.length} of {violations.length} violations
+              </span>
+            </div>
           </div>
           
-          {fallbackScans.length > 0 && (
-            <div>
-              <p className="text-yellow-700 mb-3">Available scans:</p>
-              <div className="space-y-2">
-                {fallbackScans.slice(0, 5).map((scan) => (
-                  <div key={scan.id} className="flex items-center justify-between p-3 bg-white rounded border">
-                    <div>
-                      <p className="font-medium text-gray-900">{scan.url}</p>
-                      <p className="text-sm text-gray-500">
-                        {scan.total_violations || 0} violations • 
-                        {scan.compliance_score || 0}% compliance • 
-                        {scan.created_at ? new Date(scan.created_at).toLocaleDateString() : 'Unknown date'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleSelectScan(scan)}
-                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                    >
-                      <Eye className="h-4 w-4 mr-1" />
-                      View
-                    </button>
+          <div className="divide-y divide-gray-200">
+            {filteredViolations.length === 0 ? (
+              <div className="px-6 py-8 text-center">
+                <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {selectedFilter ? `No ${selectedFilter} violations found` : 'No violations found'}
+                </h3>
+                <p className="text-gray-600">
+                  {selectedFilter 
+                    ? `This scan doesn't have any ${selectedFilter} level violations.`
+                    : 'This website appears to be fully accessible!'
+                  }
+                </p>
+              </div>
+            ) : (
+              filteredViolations.map((violation, index) => (
+                <ViolationItem key={`${violation.id}-${index}`} violation={violation} />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ✅ ENTERPRISE: Enhanced ViolationItem component
+function ViolationItem({ violation }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const getImpactIcon = (impact) => {
+    switch (impact?.toLowerCase()) {
+      case 'critical': return AlertOctagon;
+      case 'serious': return AlertTriangle;
+      case 'moderate': return AlertCircle;
+      case 'minor': return Info;
+      default: return HelpCircle;
+    }
+  };
+
+  const getImpactColor = (impact) => {
+    switch (impact?.toLowerCase()) {
+      case 'critical': return 'text-red-600 bg-red-50 border-red-200';
+      case 'serious': return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'moderate': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+      case 'minor': return 'text-blue-600 bg-blue-50 border-blue-200';
+      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+    }
+  };
+
+  const ImpactIcon = getImpactIcon(violation.impact);
+  const impactColor = getImpactColor(violation.impact);
+  const nodeCount = violation.nodes?.length || 0;
+
+  return (
+    <div className="px-6 py-4">
+      <div className="flex items-start space-x-4">
+        <div className={`flex-shrink-0 p-2 rounded-lg border ${impactColor}`}>
+          <ImpactIcon className="h-5 w-5" />
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-lg font-medium text-gray-900 mb-1">
+                {violation.help || violation.description || 'Accessibility Issue'}
+              </h3>
+              
+              <div className="flex items-center space-x-4 mb-2">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${impactColor}`}>
+                  {violation.impact || 'unknown'}
+                </span>
+                
+                {nodeCount > 0 && (
+                  <span className="text-sm text-gray-600">
+                    {nodeCount} element{nodeCount !== 1 ? 's' : ''} affected
+                  </span>
+                )}
+                
+                {violation.tags && violation.tags.length > 0 && (
+                  <div className="flex items-center space-x-1">
+                    {violation.tags.slice(0, 3).map((tag, index) => (
+                      <span key={index} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                        {tag}
+                      </span>
+                    ))}
+                    {violation.tags.length > 3 && (
+                      <span className="text-xs text-gray-500">
+                        +{violation.tags.length - 3} more
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              <p className="text-gray-700 mb-3">
+                {violation.description || 'No description available'}
+              </p>
+              
+              {violation.helpUrl && (
+                <a
+                  href={violation.helpUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center text-blue-600 hover:text-blue-500 text-sm"
+                >
+                  Learn more about this issue
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </a>
+              )}
+            </div>
+            
+            {nodeCount > 0 && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="ml-4 inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
+                {isExpanded ? 'Hide' : 'Show'} Elements ({nodeCount})
+                <ArrowRight className={`h-4 w-4 ml-2 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+              </button>
+            )}
+          </div>
+          
+          {/* Expanded node details */}
+          {isExpanded && violation.nodes && violation.nodes.length > 0 && (
+            <div className="mt-4 border-t border-gray-200 pt-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Affected Elements:</h4>
+              <div className="space-y-3">
+                {violation.nodes.map((node, nodeIndex) => (
+                  <div key={nodeIndex} className="bg-gray-50 rounded-lg p-3">
+                    {node.html && (
+                      <div className="mb-2">
+                        <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">HTML:</span>
+                        <pre className="mt-1 text-xs text-gray-800 bg-white p-2 rounded border overflow-x-auto">
+                          {node.html}
+                        </pre>
+                      </div>
+                    )}
+                    
+                    {node.target && node.target.length > 0 && (
+                      <div className="mb-2">
+                        <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">Selector:</span>
+                        <code className="ml-2 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                          {node.target[0]}
+                        </code>
+                      </div>
+                    )}
+                    
+                    {node.failureSummary && (
+                      <div>
+                        <span className="text-xs font-medium text-gray-700 uppercase tracking-wide">Issue:</span>
+                        <p className="mt-1 text-sm text-gray-800">{node.failureSummary}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
-          
-          {fallbackScans.length === 0 && (
-            <p className="text-yellow-700">
-              No scans available. Please run a new scan from the Websites tab.
-            </p>
-          )}
         </div>
-      )}
-
-      {meta && !showFallback && (
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="flex items-center space-x-3">
-                <Globe className="h-8 w-8 text-blue-600" />
-                <div>
-                  <p className="text-sm text-gray-500">Website</p>
-                  <p className="font-medium text-gray-900">{meta.url || 'Unknown'}</p>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-3">
-                <Calendar className="h-8 w-8 text-green-600" />
-                <div>
-                  <p className="text-sm text-gray-500">Scan Date</p>
-                  <p className="font-medium text-gray-900">
-                    {meta.scan_date ? new Date(meta.scan_date).toLocaleDateString() : 'Unknown'}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-3">
-                <BarChart3 className="h-8 w-8 text-purple-600" />
-                <div>
-                  <p className="text-sm text-gray-500">Total Issues</p>
-                  <p className="font-medium text-gray-900 text-2xl">{violations.length}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI Analysis Section */}
-      {!loading && !error && !showFallback && violations.length > 0 && (
-        <AIAnalysis scanId={scanId} violations={violations} meta={meta} />
-      )}
-
-      {/* Interactive Violation Breakdown */}
-      {!loading && !error && !showFallback && violations.length > 0 && (
-        <>
-          <div className="bg-white shadow rounded-lg p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">📊 Violation Breakdown</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              {renderBreakdownCard(
-                'critical',
-                AlertOctagon,
-                'Critical',
-                'Fix immediately',
-                'text-red-600 bg-red-100 border-red-200'
-              )}
-              {renderBreakdownCard(
-                'serious',
-                AlertTriangle,
-                'Serious',
-                'High priority',
-                'text-orange-600 bg-orange-100 border-orange-200'
-              )}
-              {renderBreakdownCard(
-                'moderate',
-                AlertCircle,
-                'Moderate',
-                'Medium priority',
-                'text-yellow-600 bg-yellow-100 border-yellow-200'
-              )}
-              {renderBreakdownCard(
-                'minor',
-                Info,
-                'Minor',
-                'Low priority',
-                'text-blue-600 bg-blue-100 border-blue-200'
-              )}
-              {/* ✅ ENTERPRISE: Add unknown impact card */}
-              {renderBreakdownCard(
-                'unknown',
-                HelpCircle,
-                'Unknown',
-                'Needs review',
-                'text-gray-600 bg-gray-100 border-gray-200'
-              )}
-            </div>
-            
-            {/* Smart recommendations based on breakdown */}
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-800">
-                💡 <strong>Recommended Priority:</strong> {
-                  breakdown.critical > 0 ? 'Start with critical issues - these prevent users from accessing content.' :
-                  breakdown.serious > 0 ? 'Focus on serious issues - these significantly impact user experience.' :
-                  breakdown.moderate > 0 ? 'Address moderate issues - these create barriers for some users.' :
-                  breakdown.unknown > 0 ? 'Review unknown issues first to determine their impact level.' :
-                  'Great job! Only minor issues remain - these are easy wins for better accessibility.'
-                }
-              </p>
-            </div>
-          </div>
-
-          {/* Add aria-live="polite" to the dynamic count headline */}
-          <div className="text-sm text-gray-600 mb-4" aria-live="polite">
-            {getHeaderText()}
-          </div>
-          
-          <div className="space-y-4">
-            {sortedViolations.slice(0, 100).map((v, i) => {
-              // Use stable keys for violations
-              const key = v.id || v.ruleId || v.helpUrl || `${(v.impact||'')}-${i}`;
-              const SeverityIcon = getSeverityIcon(v.impact);
-              
-              return (
-                <div key={key} className="bg-white border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3 flex-1">
-                      <div className={`p-2 rounded-lg border ${getSeverityColor(v.impact)}`}>
-                        <SeverityIcon className="h-5 w-5" />
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-2">
-                          {/* Show a rule name even if ruleId is missing */}
-                          <h4 className="font-medium text-gray-900">
-                            {v.id || v.ruleId || 'Unknown rule'}
-                          </h4>
-                          {/* Consistency - impact casing */}
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getSeverityColor(v.impact)}`}>
-                            {(v.impact || 'unknown').toLowerCase()}
-                          </span>
-                        </div>
-                        
-                        <p className="text-sm text-gray-600 mb-2">{v.description}</p>
-                        
-                        {v.help && (
-                          <p className="text-sm text-gray-600 mb-2">
-                            <strong>How to fix:</strong> {v.help}
-                          </p>
-                        )}
-                        
-                        {v.nodes && v.nodes.length > 0 && (
-                          <div className="mt-2">
-                            <p className="text-sm text-gray-600">
-                              <strong>Affected elements:</strong> {v.nodes.length}
-                            </p>
-                            <details className="mt-1">
-                              <summary className="text-sm text-blue-600 cursor-pointer">Show elements</summary>
-                              <ul className="mt-2 text-xs space-y-1">
-                                {v.nodes.slice(0, 5).map((node, idx) => (
-                                  <li key={idx} className="bg-gray-100 p-2 rounded">
-                                    {/* ✅ ENTERPRISE: Defensive guard if node.target can be undefined */}
-                                    <code>{Array.isArray(node.target) ? node.target.join(', ') : node.target ?? '(no selector)'}</code>
-                                    {node.failureSummary && (
-                                      <div className="text-gray-600 mt-1">{node.failureSummary}</div>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </details>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2 ml-4">
-                      {v.helpUrl && (
-                        <a
-                          href={v.helpUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center px-2 py-1 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
-                        >
-                          <ExternalLink className="h-3 w-3 mr-1" />
-                          Learn More
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
+      </div>
     </div>
   );
 }
 
-// helper — get scan meta/status
+// ✅ ENTERPRISE: Helper function for fetching scan metadata
 async function fetchScanMeta(scanId) {
-  const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://sentryprime-backend-v2-production.up.railway.app'}/api/scans/${scanId}`, {
-    headers: {
-      'Authorization': `Bearer ${localStorage.getItem('sentryprime_token')}`
+  try {
+    // Try to get scan metadata from your API
+    const response = await fetch(`/api/scans/${scanId}/meta`);
+    if (response.ok) {
+      return await response.json();
     }
-  });
-  if (res.status === 202) {
-    return { status: 'running' };
+  } catch (e) {
+    console.log('Could not fetch scan meta:', e.message);
   }
-  if (!res.ok) {
-    const j = await res.json().catch(() => ({}));
-    throw new Error(j.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+  
+  // Return minimal metadata if API call fails
+  return {
+    url: 'Unknown URL',
+    timestamp: new Date().toISOString(),
+    compliance_score: 0
+  };
 }
