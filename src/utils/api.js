@@ -113,14 +113,10 @@ export const websites = {
 };
 
 export const scanning = {
+  // ✅ FIXED: Updated to use the correct backend endpoint
   startScan: async (websiteId) => {
-    const website = await makeRequest(`/api/dashboard/websites/${websiteId}`);
-    return await makeRequest('/api/dashboard/scans', {
-      method: 'POST',
-      body: JSON.stringify({
-        website_id: websiteId,
-        url: website.url
-      })
+    return await makeRequest(`/api/websites/${websiteId}/scans`, {
+      method: 'POST'
     });
   },
   
