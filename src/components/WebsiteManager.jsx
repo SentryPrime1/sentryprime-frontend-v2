@@ -236,7 +236,8 @@ export default function WebsiteManager({ onWebsiteAdded, onScanStarted, onViewRe
     });
 
     try {
-      const scan = await scanning.startScan(site.id);
+      // ✅ FIXED: Pass both websiteId and websiteUrl to match backend expectations
+      const scan = await scanning.startScan(site.id, site.url);
       // persist so we can survive remounts
       activeScansStore.set(websiteId, { scanId: scan.id, startedAt: Date.now() });
 
