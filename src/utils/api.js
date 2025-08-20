@@ -1,4 +1,4 @@
-// FIXED src/utils/api.js - Includes missing getStats function
+// FIXED src/utils/api.js - Works with original backend structure
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
 
@@ -113,10 +113,14 @@ export const websites = {
 };
 
 export const scanning = {
-  // ✅ FIXED: Updated to use the correct backend endpoint
-  startScan: async (websiteId) => {
-    return await makeRequest(`/api/websites/${websiteId}/scans`, {
-      method: 'POST'
+  // ✅ FIXED: Updated to work with the original backend route structure
+  startScan: async (websiteId, websiteUrl) => {
+    return await makeRequest('/api/dashboard/scans', {
+      method: 'POST',
+      body: JSON.stringify({
+        website_id: websiteId,
+        url: websiteUrl
+      })
     });
   },
   
