@@ -94,7 +94,7 @@ export const dashboard = {
   
   getWebsites: async () => {
     const response = await makeRequest('/api/dashboard/websites');
-    return response.websites || [];
+return response || [];
   },
   
   getScans: async () => {
