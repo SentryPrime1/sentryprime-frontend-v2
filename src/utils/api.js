@@ -1,6 +1,6 @@
 // FIXED src/utils/api.js - Works with original backend structure
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
+const API_BASE = 'https://sentryprime-backend-v2-production.up.railway.app';
 
 async function makeRequest(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
