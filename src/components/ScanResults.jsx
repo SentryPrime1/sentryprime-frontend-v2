@@ -1,418 +1,38 @@
-import { useState, useEffect, useRef } from 'react';
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  Info, 
-  ExternalLink, 
-  Brain, 
-  Eye,
-  BarChart3,
-  Calendar,
-  Globe,
-  ArrowLeft,
-  RefreshCw,
-  AlertOctagon,
-  AlertCircle,
-  X,
-  Lightbulb, 
-  Target, 
-  TrendingUp, 
-  Clock,
-  Zap,
-  ArrowRight,
-  Star,
-  Award,
-  HelpCircle
-} from 'lucide-react';
-import { scanning, dashboard } from '../utils/api';
-// ✅ Import Alt Text AI components
-import AltTextAISection from './AltTextAISection.jsx';
+import React, { useEffect, useState } from 'react';
+import { scanning } from '../utils/api';
 
-// AI Analysis Component (embedded) - BULLETPROOF ENTERPRISE VERSION
-function AIAnalysis({ scanId, violations, meta }) {
-  const [analysis, setAnalysis] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  
-  // Prevent repeated AI fetches on minor list changes
-  const lastAnalyzedRef = useRef(null);
-
-  useEffect(() => {
-    if (!scanId || violations.length === 0) return;
-    if (lastAnalyzedRef.current === scanId) return; // only once per scanId
-    lastAnalyzedRef.current = scanId;
-    fetchAnalysis();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanId, violations.length]);
-
-  const fetchAnalysis = async () => {
-    if (!scanId) return;
-    
-    // ✅ ENTERPRISE: Ensure scanning.getAIAnalysis exists
-    if (typeof scanning.getAIAnalysis !== 'function') {
-      setError('AI Analysis not available - please check API configuration');
-      return;
-    }
-    
-    setLoading(true);
-    setError('');
-    
-    try {
-      const result = await scanning.getAIAnalysis(scanId);
-      setAnalysis(result);
-    } catch (e) {
-      console.error('AI Analysis failed:', e);
-      setError(e.message || 'Failed to generate AI analysis');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const parseAnalysis = (analysisText) => {
-    if (!analysisText) return null;
-
-    const sections = {
-      summary: '',
-      priorities: [],
-      maturity: '',
-      nextSteps: ''
-    };
-
-    const lines = analysisText.split('\n').filter(line => line.trim());
-    let currentSection = 'summary';
-    let priorityCount = 0;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      
-      if (trimmed.toLowerCase().includes('executive summary') || 
-          trimmed.toLowerCase().includes('summary')) {
-        currentSection = 'summary';
-        continue;
-      } else if (trimmed.toLowerCase().includes('priority') || 
-                 trimmed.toLowerCase().includes('top 3')) {
-        currentSection = 'priorities';
-        continue;
-      } else if (trimmed.toLowerCase().includes('maturity') || 
-                 trimmed.toLowerCase().includes('assessment')) {
-        currentSection = 'maturity';
-        continue;
-      } else if (trimmed.toLowerCase().includes('next steps') || 
-                 trimmed.toLowerCase().includes('recommended')) {
-        currentSection = 'nextSteps';
-        continue;
-      }
-
-      if (currentSection === 'priorities' && trimmed.match(/^\d+\./) && priorityCount < 3) {
-        sections.priorities.push(trimmed.replace(/^\d+\.\s*/, ''));
-        priorityCount++;
-      } else if (currentSection !== 'priorities' && trimmed.length > 10) {
-        if (sections[currentSection]) {
-          sections[currentSection] += ' ' + trimmed;
-        } else {
-          sections[currentSection] = trimmed;
-        }
-      }
-    }
-
-    return sections;
-  };
-
-  const parsedAnalysis = analysis?.analysis ? parseAnalysis(analysis.analysis) : null;
-
-  return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Brain className="h-5 w-5 text-purple-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">AI Analysis</h3>
-              <p className="text-sm text-gray-600">Intelligent insights and recommendations</p>
-            </div>
-          </div>
-          {analysis && (
-            <div className="flex items-center space-x-2 text-sm text-green-600">
-              <CheckCircle className="h-4 w-4" />
-              <span>Analysis Complete</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-6">
-        {loading && (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Generating AI analysis...</p>
-            <p className="text-sm text-gray-500 mt-1">This may take a few moments</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-              <p className="text-red-800 font-medium">Analysis Failed</p>
-            </div>
-            <p className="text-red-700 mt-1">{error}</p>
-            <button
-              onClick={fetchAnalysis}
-              className="mt-3 inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
-            </button>
-          </div>
-        )}
-
-        {analysis && parsedAnalysis && !loading && (
-          <div className="space-y-6">
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-blue-50 rounded-lg p-4">
-                <div className="flex items-center space-x-2">
-                  <Target className="h-5 w-5 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-900">Total Issues</span>
-                </div>
-                <p className="text-2xl font-bold text-blue-900 mt-1">
-                  {analysis?.summary?.total_violations ?? violations.length}
-                </p>
-              </div>
-              
-              <div className="bg-green-50 rounded-lg p-4">
-                <div className="flex items-center space-x-2">
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                  <span className="text-sm font-medium text-green-900">Compliance</span>
-                </div>
-                <p className="text-2xl font-bold text-green-900 mt-1">
-                  {analysis?.summary?.compliance_score ?? meta?.compliance_score ?? 0}%
-                </p>
-              </div>
-              
-              <div className="bg-purple-50 rounded-lg p-4">
-                <div className="flex items-center space-x-2">
-                  <Zap className="h-5 w-5 text-purple-600" />
-                  <span className="text-sm font-medium text-purple-900">Pages Scanned</span>
-                </div>
-                <p className="text-2xl font-bold text-purple-900 mt-1">
-                  {analysis?.summary?.pages_scanned ?? 1}
-                </p>
-              </div>
-            </div>
-
-            {/* Executive Summary */}
-            {parsedAnalysis.summary && (
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-3">
-                  <Star className="h-5 w-5 text-gray-600" />
-                  <h4 className="font-medium text-gray-900">Executive Summary</h4>
-                </div>
-                <p className="text-gray-700 leading-relaxed">{parsedAnalysis.summary}</p>
-              </div>
-            )}
-
-            {/* Priority Fixes */}
-            {parsedAnalysis.priorities.length > 0 && (
-              <div>
-                <div className="flex items-center space-x-2 mb-4">
-                  <Lightbulb className="h-5 w-5 text-yellow-600" />
-                  <h4 className="font-medium text-gray-900">Top Priority Fixes</h4>
-                </div>
-                <div className="space-y-3">
-                  {parsedAnalysis.priorities.map((priority, index) => (
-                    <div key={index} className="flex items-start space-x-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                      <div className="flex-shrink-0 w-6 h-6 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                        {index + 1}
-                      </div>
-                      <p className="text-gray-700 flex-1">{priority}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Next Steps */}
-            {parsedAnalysis.nextSteps && (
-              <div className="bg-green-50 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-3">
-                  <ArrowRight className="h-5 w-5 text-green-600" />
-                  <h4 className="font-medium text-gray-900">Recommended Next Steps</h4>
-                </div>
-                <p className="text-gray-700 leading-relaxed">{parsedAnalysis.nextSteps}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!analysis && !loading && !error && (
-          <div className="text-center py-8">
-            <Brain className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h4 className="text-lg font-medium text-gray-900 mb-2">Ready for AI Analysis</h4>
-            <p className="text-gray-600 mb-4">
-              Get intelligent insights and prioritized recommendations for your accessibility violations.
-            </p>
-            <button
-              onClick={fetchAnalysis}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
-            >
-              <Brain className="h-4 w-4 mr-2" />
-              Generate AI Analysis
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Main ScanResults Component
-export default function ScanResults({ scanId, onBack }) {
+const ScanResults = ({ scanId }) => {
   const [loading, setLoading] = useState(true);
-  const [meta, setMeta] = useState(null);
-  const [violations, setViolations] = useState([]);
-  const [error, setError] = useState('');
-  const [fallbackScans, setFallbackScans] = useState([]);
-  const [showFallback, setShowFallback] = useState(false);
-  
-  // Interactive filtering state
-  const [selectedFilter, setSelectedFilter] = useState(null);
-
-  // ✅ Auth token for Alt Text AI (you may need to get this from your auth context)
-  const [authToken, setAuthToken] = useState(null);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // ✅ Get auth token from localStorage or your auth context
-    const token = localStorage.getItem('sentryprime_token') || localStorage.getItem('token');
-    setAuthToken(token);
-  }, []);
-
-  useEffect(() => {
-    if (!scanId) return;
-    console.log('ScanResults received scanId:', scanId);
-
-    let cancelled = false;
-
-    const fetchMeta = async () => {
+    const fetchResults = async () => {
       try {
-        const r = await scanning.getScanMeta(scanId);
-        if (!cancelled) setMeta(r);
-      } catch (e) {
-        console.error('Failed to fetch scan meta:', e);
-      }
-    };
-
-    const fetchResultsWithPolling = async () => {
-      // ✅ FIXED: Convert scanId to string before calling startsWith
-      if (String(scanId).startsWith('fallback-')) {
-        console.log('🔍 Detected fallback scan ID, will show available scans instead');
-        
-        try {
-          const scans = await dashboard.getScans();
-          if (!cancelled) {
-            setFallbackScans(scans);
-            setShowFallback(true);
-            setLoading(false);
-          }
-        } catch (e) {
-          if (!cancelled) {
-            setError('Unable to load scan results. Please try running a new scan.');
-            setLoading(false);
-          }
-        }
-        return;
-      }
-
-      for (let i = 0; i < 15; i++) {
-        try {
-          const res = await scanning.getScanResults(scanId);
-          if (res && Array.isArray(res.violations)) {
-            if (!cancelled) {
-              setViolations(res.violations);
-              setLoading(false);
-            }
-            return;
-          }
-        } catch (e) {
-          console.log(`Poll attempt ${i + 1}: ${e.message}`);
-          
-          if (i > 5 && e.message.includes('404')) {
-            console.log('🔍 Scan not found after multiple attempts, showing available scans');
-            try {
-              const scans = await dashboard.getScans();
-              if (!cancelled) {
-                setFallbackScans(scans);
-                setShowFallback(true);
-                setLoading(false);
-              }
-            } catch (fallbackError) {
-              if (!cancelled) {
-                setError('Unable to load scan results. Please try running a new scan.');
-                setLoading(false);
-              }
-            }
-            return;
-          }
-        }
-
-        if (i < 14) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      }
-
-      if (!cancelled) {
-        setError('Scan results are taking longer than expected. Please try again later.');
+        console.log(`🔍 Fetching results for scan ${scanId}`);
+        const data = await scanning.getScanResults(scanId);
+        console.log('📊 Received scan results:', data);
+        setResults(data);
+      } catch (err) {
+        console.error('❌ Error loading scan results:', err);
+        setError('Failed to load scan results');
+      } finally {
         setLoading(false);
       }
     };
 
-    fetchMeta();
-    fetchResultsWithPolling();
-
-    return () => {
-      cancelled = true;
-    };
+    if (scanId) {
+      fetchResults();
+    }
   }, [scanId]);
-
-  // Filter violations by impact level
-  const filteredViolations = selectedFilter 
-    ? violations.filter(v => v.impact === selectedFilter)
-    : violations;
-
-  // Group violations by impact for summary
-  const violationsByImpact = violations.reduce((acc, violation) => {
-    const impact = violation.impact || 'unknown';
-    acc[impact] = (acc[impact] || 0) + 1;
-    return acc;
-  }, {});
-
-  const impactColors = {
-    critical: 'bg-red-100 text-red-800 border-red-200',
-    serious: 'bg-orange-100 text-orange-800 border-orange-200',
-    moderate: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-    minor: 'bg-blue-100 text-blue-800 border-blue-200',
-    unknown: 'bg-gray-100 text-gray-800 border-gray-200'
-  };
-
-  const impactIcons = {
-    critical: AlertOctagon,
-    serious: AlertTriangle,
-    moderate: AlertCircle,
-    minor: Info,
-    unknown: HelpCircle
-  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Scan Results</h2>
-          <p className="text-gray-600">Please wait while we fetch your accessibility report...</p>
+          <p className="text-gray-600">Loading Scan Results...</p>
+          <p className="text-sm text-gray-500 mt-2">Please wait while we fetch your accessibility report...</p>
         </div>
       </div>
     );
@@ -420,250 +40,233 @@ export default function ScanResults({ scanId, onBack }) {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto p-6">
-          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Results</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <div className="space-x-3">
-            <button
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
-            </button>
-            <button
-              onClick={onBack}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </button>
-          </div>
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+        <div className="flex items-center space-x-2">
+          <div className="text-red-600">⚠️</div>
+          <h3 className="text-red-800 font-medium">Error Loading Results</h3>
         </div>
+        <p className="text-red-700 mt-2">{error}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          Try Again
+        </button>
       </div>
     );
   }
 
-  if (showFallback) {
+  if (!results) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <div className="text-center mb-6">
-              <Eye className="h-12 w-12 text-blue-500 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Available Scan Results</h2>
-              <p className="text-gray-600">Choose from your recent scans to view results</p>
-            </div>
-
-            {fallbackScans.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-gray-600 mb-4">No scan results available yet.</p>
-                <button
-                  onClick={onBack}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Dashboard
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {fallbackScans.map((scan) => (
-                  <div key={scan.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-medium text-gray-900">{scan.website_name || scan.url}</h3>
-                        <p className="text-sm text-gray-600">{scan.url}</p>
-                        <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                          <span className="flex items-center">
-                            <Calendar className="h-4 w-4 mr-1" />
-                            {new Date(scan.scan_date).toLocaleDateString()}
-                          </span>
-                          <span className="flex items-center">
-                            <BarChart3 className="h-4 w-4 mr-1" />
-                            {scan.compliance_score}% compliance
-                          </span>
-                          <span className="flex items-center">
-                            <AlertTriangle className="h-4 w-4 mr-1" />
-                            {scan.total_violations} violations
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setShowFallback(false);
-                          setLoading(true);
-                          // Trigger a re-fetch with the selected scan ID
-                          window.location.hash = `#/scan-results/${scan.id}`;
-                          window.location.reload();
-                        }}
-                        className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        View Results
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+      <div className="text-center py-12">
+        <p className="text-gray-600">No results found.</p>
       </div>
     );
   }
+
+  // ✅ ENTERPRISE FIX: Extract data matching backend response format
+  const {
+    scanId: resultScanId,
+    websiteName,
+    url,
+    scanDate,
+    completionDate,
+    totalViolations = 0,
+    complianceScore = 0,
+    pagesScanned = 0,
+    results: scanResults
+  } = results;
+
+  // ✅ Parse the nested results object if it exists
+  const {
+    totalPages = pagesScanned,
+    byImpact = { critical: 0, serious: 0, moderate: 0, minor: 0 },
+    pages = [],
+    violations = totalViolations
+  } = scanResults || {};
+
+  // ✅ Extract violations array from pages if available
+  const allViolations = pages.reduce((acc, page) => {
+    return acc.concat(page.violations || []);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={onBack}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
-              </button>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">Accessibility Scan Results</h1>
-                {meta && (
-                  <p className="text-sm text-gray-600">
-                    <Globe className="h-4 w-4 inline mr-1" />
-                    {meta.url}
-                  </p>
-                )}
-              </div>
-            </div>
-            
-            {meta && (
-              <div className="flex items-center space-x-6 text-sm">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-900">{meta.compliance_score || 0}%</div>
-                  <div className="text-gray-600">Compliance</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">{violations.length}</div>
-                  <div className="text-gray-600">Violations</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{meta.pages_scanned || 1}</div>
-                  <div className="text-gray-600">Pages</div>
-                </div>
-              </div>
-            )}
-          </div>
+      <div className="border-b border-gray-200 pb-4">
+        <h2 className="text-2xl font-bold text-gray-900">Accessibility Scan Results</h2>
+        {websiteName && (
+          <p className="text-gray-600 mt-1">
+            <span className="font-medium">{websiteName}</span> • {url}
+          </p>
+        )}
+        {scanDate && (
+          <p className="text-sm text-gray-500 mt-1">
+            Scanned on {new Date(scanDate).toLocaleDateString()} at {new Date(scanDate).toLocaleTimeString()}
+          </p>
+        )}
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-medium">Compliance Score</h3>
+          <p className="text-3xl font-bold mt-2">{complianceScore}%</p>
+          <p className="text-blue-100 text-sm mt-1">WCAG 2.1 AA</p>
+        </div>
+        
+        <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-medium">Pages Scanned</h3>
+          <p className="text-3xl font-bold mt-2">{totalPages}</p>
+          <p className="text-green-100 text-sm mt-1">Successfully analyzed</p>
+        </div>
+        
+        <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-medium">Total Issues</h3>
+          <p className="text-3xl font-bold mt-2">{violations}</p>
+          <p className="text-red-100 text-sm mt-1">Accessibility violations</p>
+        </div>
+
+        <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-medium">Status</h3>
+          <p className="text-2xl font-bold mt-2">Complete</p>
+          <p className="text-purple-100 text-sm mt-1">Analysis finished</p>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="space-y-8">
-          {/* Accessibility Breakdown */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Accessibility Breakdown</h2>
-            </div>
-            <div className="p-6">
-              {violations.length === 0 ? (
-                <div className="text-center py-8">
-                  <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Great Job!</h3>
-                  <p className="text-gray-600">No accessibility violations found on this page.</p>
-                </div>
-              ) : (
-                <>
-                  {/* Impact Filter Buttons */}
-                  <div className="flex flex-wrap gap-2 mb-6">
-                    <button
-                      onClick={() => setSelectedFilter(null)}
-                      className={`px-3 py-2 text-sm font-medium rounded-md border ${
-                        selectedFilter === null
-                          ? 'bg-blue-100 text-blue-800 border-blue-200'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      All ({violations.length})
-                    </button>
-                    {Object.entries(violationsByImpact).map(([impact, count]) => {
-                      const IconComponent = impactIcons[impact] || Info;
-                      return (
-                        <button
-                          key={impact}
-                          onClick={() => setSelectedFilter(impact)}
-                          className={`px-3 py-2 text-sm font-medium rounded-md border flex items-center space-x-1 ${
-                            selectedFilter === impact
-                              ? impactColors[impact]
-                              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <IconComponent className="h-4 w-4" />
-                          <span className="capitalize">{impact} ({count})</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Violations List */}
-                  <div className="space-y-4">
-                    {filteredViolations.map((violation, index) => {
-                      const IconComponent = impactIcons[violation.impact] || Info;
-                      return (
-                        <div key={index} className="border border-gray-200 rounded-lg p-4">
-                          <div className="flex items-start space-x-3">
-                            <div className={`p-2 rounded-lg ${impactColors[violation.impact] || impactColors.unknown}`}>
-                              <IconComponent className="h-5 w-5" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-2">
-                                <h3 className="text-sm font-medium text-gray-900">{violation.description}</h3>
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${impactColors[violation.impact] || impactColors.unknown}`}>
-                                  {violation.impact}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-600 mb-3">{violation.help}</p>
-                              {violation.helpUrl && (
-                                <a
-                                  href={violation.helpUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800"
-                                >
-                                  Learn more
-                                  <ExternalLink className="h-4 w-4 ml-1" />
-                                </a>
-                              )}
-                              {violation.pageUrl && (
-                                <div className="mt-2 text-xs text-gray-500">
-                                  Found on: {violation.pageUrl}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
+      {/* Accessibility Breakdown */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-xl font-semibold mb-4">Accessibility Breakdown</h3>
+        
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="text-center p-4 bg-red-50 rounded-lg">
+            <div className="text-2xl font-bold text-red-600">{byImpact.critical || 0}</div>
+            <div className="text-sm text-red-700">Critical</div>
           </div>
-
-          {/* ✅ Alt Text AI Section */}
-          {authToken && scanId && (
-            <AltTextAISection 
-              scanId={scanId} 
-              authToken={authToken}
-            />
-          )}
-
-          {/* AI Analysis Section */}
-          <AIAnalysis scanId={scanId} violations={violations} meta={meta} />
+          <div className="text-center p-4 bg-orange-50 rounded-lg">
+            <div className="text-2xl font-bold text-orange-600">{byImpact.serious || 0}</div>
+            <div className="text-sm text-orange-700">Serious</div>
+          </div>
+          <div className="text-center p-4 bg-yellow-50 rounded-lg">
+            <div className="text-2xl font-bold text-yellow-600">{byImpact.moderate || 0}</div>
+            <div className="text-sm text-yellow-700">Moderate</div>
+          </div>
+          <div className="text-center p-4 bg-blue-50 rounded-lg">
+            <div className="text-2xl font-bold text-blue-600">{byImpact.minor || 0}</div>
+            <div className="text-sm text-blue-700">Minor</div>
+          </div>
         </div>
+
+        {/* Violations Table */}
+        {allViolations.length > 0 ? (
+          <div className="overflow-x-auto">
+            <h4 className="text-lg font-medium mb-3">Issues Found</h4>
+            <table className="w-full text-left border border-gray-200 rounded-lg">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="p-3 border-b border-gray-200 font-medium text-gray-700">Issue</th>
+                  <th className="p-3 border-b border-gray-200 font-medium text-gray-700">Impact</th>
+                  <th className="p-3 border-b border-gray-200 font-medium text-gray-700">Description</th>
+                  <th className="p-3 border-b border-gray-200 font-medium text-gray-700">Help</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allViolations.slice(0, 10).map((violation, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="p-3 border-b border-gray-200">
+                      <span className="font-medium text-gray-900">{violation.id || 'Unknown Issue'}</span>
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        violation.impact === 'critical' ? 'bg-red-100 text-red-800' :
+                        violation.impact === 'serious' ? 'bg-orange-100 text-orange-800' :
+                        violation.impact === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {violation.impact || 'minor'}
+                      </span>
+                    </td>
+                    <td className="p-3 border-b border-gray-200 text-gray-600">
+                      {violation.description || 'No description available'}
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      {violation.helpUrl ? (
+                        <a 
+                          href={violation.helpUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                          Learn more →
+                        </a>
+                      ) : (
+                        <span className="text-gray-400 text-sm">No help available</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            
+            {allViolations.length > 10 && (
+              <p className="text-sm text-gray-500 mt-3">
+                Showing first 10 of {allViolations.length} issues. Full report available in detailed view.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <div className="text-green-600 text-4xl mb-2">✅</div>
+            <h4 className="text-lg font-medium text-gray-900 mb-2">No Issues Found!</h4>
+            <p className="text-gray-600">This website appears to meet accessibility standards.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Alt Text AI Section */}
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-6">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <span className="text-purple-600 text-xl">🤖</span>
+          </div>
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900">Alt Text AI</h3>
+            <p className="text-gray-600">AI-powered alt text generation for your images</p>
+          </div>
+        </div>
+        
+        <p className="text-gray-700 mb-4">
+          Our AI can analyze images on your website and generate descriptive alt text to improve accessibility. 
+          This helps screen readers provide better descriptions for visually impaired users.
+        </p>
+        
+        <div className="flex space-x-3">
+          <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">
+            Generate AI Alt Text
+          </button>
+          <button className="px-4 py-2 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50 transition-colors">
+            Learn More
+          </button>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex justify-center space-x-4 pt-6">
+        <button 
+          onClick={() => window.print()} 
+          className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          Export Report
+        </button>
+        <button 
+          onClick={() => window.location.href = '/dashboard'} 
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Back to Dashboard
+        </button>
       </div>
     </div>
   );
-}
+};
+
+export default ScanResults;
