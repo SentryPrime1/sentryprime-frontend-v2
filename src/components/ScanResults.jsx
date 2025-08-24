@@ -5,6 +5,13 @@ const ScanResults = ({ scanId }) => {
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+  
+  // Alt Text AI State
+  const [showAltTextModal, setShowAltTextModal] = useState(false);
+  const [altTextEstimate, setAltTextEstimate] = useState(null);
+  const [altTextJob, setAltTextJob] = useState(null);
+  const [altTextLoading, setAltTextLoading] = useState(false);
+  const [altTextResults, setAltTextResults] = useState(null);
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -25,6 +32,132 @@ const ScanResults = ({ scanId }) => {
       fetchResults();
     }
   }, [scanId]);
+
+  // Alt Text AI Functions
+  const handleGenerateAltText = async () => {
+    try {
+      setAltTextLoading(true);
+      console.log('🤖 Getting Alt Text AI estimate for scan:', scanId);
+      
+      // Get cost estimate
+      const response = await fetch('/api/alt-text-ai/estimate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('sentryprime_token') || localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ scanId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const estimate = await response.json();
+      console.log('💰 Alt Text AI estimate:', estimate);
+      setAltTextEstimate(estimate);
+      setShowAltTextModal(true);
+    } catch (error) {
+      console.error('❌ Alt Text AI estimate failed:', error);
+      alert('Failed to get Alt Text AI estimate. Please try again.');
+    } finally {
+      setAltTextLoading(false);
+    }
+  };
+
+  const handleCreateAltTextJob = async () => {
+    try {
+      setAltTextLoading(true);
+      console.log('🚀 Creating Alt Text AI job for scan:', scanId);
+
+      const response = await fetch('/api/alt-text-ai/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('sentryprime_token') || localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ scanId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const job = await response.json();
+      console.log('✅ Alt Text AI job created:', job);
+      setAltTextJob(job);
+      setShowAltTextModal(false);
+      
+      // Start polling for job completion
+      pollAltTextJob(job.jobId);
+    } catch (error) {
+      console.error('❌ Alt Text AI job creation failed:', error);
+      alert('Failed to create Alt Text AI job. Please try again.');
+    } finally {
+      setAltTextLoading(false);
+    }
+  };
+
+  const pollAltTextJob = async (jobId) => {
+    const maxAttempts = 30; // 1 minute max
+    let attempts = 0;
+
+    const poll = async () => {
+      try {
+        attempts++;
+        console.log(`🔄 Polling Alt Text AI job ${jobId} (attempt ${attempts})`);
+
+        const response = await fetch(`/api/alt-text-ai/jobs/${jobId}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('sentryprime_token') || localStorage.getItem('token')}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const jobStatus = await response.json();
+        console.log('📊 Alt Text AI job status:', jobStatus);
+
+        if (jobStatus.status === 'completed') {
+          console.log('🎉 Alt Text AI job completed!');
+          setAltTextResults(jobStatus.results);
+          setAltTextJob(jobStatus);
+          return;
+        }
+
+        if (jobStatus.status === 'failed') {
+          console.error('❌ Alt Text AI job failed');
+          alert('Alt Text AI processing failed. Please try again.');
+          return;
+        }
+
+        // Update job progress
+        setAltTextJob(jobStatus);
+
+        // Continue polling if not complete and under max attempts
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 2000); // Poll every 2 seconds
+        } else {
+          console.error('⏰ Alt Text AI job polling timeout');
+          alert('Alt Text AI processing is taking longer than expected. Please check back later.');
+        }
+      } catch (error) {
+        console.error('❌ Alt Text AI job polling error:', error);
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 2000); // Retry on error
+        }
+      }
+    };
+
+    poll();
+  };
+
+  const handleLearnMore = () => {
+    // Open learn more modal or navigate to documentation
+    alert('Alt Text AI uses advanced computer vision to analyze images and generate descriptive, accessible alt text that helps screen readers provide better descriptions for visually impaired users.');
+  };
 
   if (loading) {
     return (
@@ -235,20 +368,167 @@ const ScanResults = ({ scanId }) => {
           </div>
         </div>
         
-        <p className="text-gray-700 mb-4">
-          Our AI can analyze images on your website and generate descriptive alt text to improve accessibility. 
-          This helps screen readers provide better descriptions for visually impaired users.
-        </p>
-        
-        <div className="flex space-x-3">
-          <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">
-            Generate AI Alt Text
-          </button>
-          <button className="px-4 py-2 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50 transition-colors">
-            Learn More
-          </button>
-        </div>
+        {altTextJob ? (
+          <div className="space-y-4">
+            {altTextJob.status === 'processing' ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span className="font-medium text-blue-800">Processing Images...</span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                    style={{ width: `${altTextJob.progress || 0}%` }}
+                  ></div>
+                </div>
+                <p className="text-sm text-blue-700 mt-2">
+                  {altTextJob.processedImages || 0} of {altTextJob.totalImages || 0} images processed
+                </p>
+              </div>
+            ) : altTextJob.status === 'completed' && altTextResults ? (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-3">
+                  <span className="text-green-600 text-lg">✅</span>
+                  <span className="font-medium text-green-800">Alt Text Generation Complete!</span>
+                </div>
+                <p className="text-green-700 mb-3">
+                  Generated alt text for {altTextResults.summary?.totalProcessed || 0} images
+                </p>
+                <button 
+                  onClick={() => setShowAltTextModal(true)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  View Suggestions
+                </button>
+              </div>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <span className="text-red-800">Alt Text AI processing failed. Please try again.</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <p className="text-gray-700 mb-4">
+              Our AI can analyze images on your website and generate descriptive alt text to improve accessibility. 
+              This helps screen readers provide better descriptions for visually impaired users.
+            </p>
+            
+            <div className="flex space-x-3">
+              <button 
+                onClick={handleGenerateAltText}
+                disabled={altTextLoading}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {altTextLoading ? 'Loading...' : 'Generate AI Alt Text'}
+              </button>
+              <button 
+                onClick={handleLearnMore}
+                className="px-4 py-2 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50 transition-colors"
+              >
+                Learn More
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Alt Text AI Modal */}
+      {showAltTextModal && altTextEstimate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold mb-4">Alt Text AI Cost Estimate</h3>
+            
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between">
+                <span>Images to process:</span>
+                <span className="font-medium">{altTextEstimate.totalImages}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Estimated cost:</span>
+                <span className="font-medium">${altTextEstimate.estimatedCost}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Estimated time:</span>
+                <span className="font-medium">{altTextEstimate.estimatedTime} seconds</span>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+              <p className="text-sm text-blue-800">
+                Our AI will analyze each image and generate descriptive alt text that improves accessibility 
+                and helps screen readers provide better descriptions for visually impaired users.
+              </p>
+            </div>
+
+            <div className="flex space-x-3">
+              <button 
+                onClick={handleCreateAltTextJob}
+                disabled={altTextLoading}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+              >
+                {altTextLoading ? 'Creating Job...' : 'Create Job'}
+              </button>
+              <button 
+                onClick={() => setShowAltTextModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alt Text Results Modal */}
+      {showAltTextModal && altTextResults && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold">AI-Generated Alt Text Suggestions</h3>
+            </div>
+            
+            <div className="p-6 overflow-y-auto max-h-[70vh]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {altTextResults.images?.slice(0, 10).map((image, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-lg p-4">
+                    <div className="aspect-video bg-gray-100 rounded mb-3 flex items-center justify-center">
+                      <span className="text-gray-500">Image {idx + 1}</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">Current Alt Text:</label>
+                        <p className="text-sm text-gray-600 italic">
+                          {image.currentAlt || 'No alt text'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">AI Suggestion:</label>
+                        <p className="text-sm text-gray-900 bg-green-50 p-2 rounded">
+                          {image.suggestedAlt}
+                        </p>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Confidence: {Math.round((image.confidence || 0) * 100)}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="p-6 border-t border-gray-200">
+              <button 
+                onClick={() => setShowAltTextModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex justify-center space-x-4 pt-6">
