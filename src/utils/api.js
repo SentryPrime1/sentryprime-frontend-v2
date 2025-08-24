@@ -139,3 +139,5 @@ export const scanning = {
     });
   }
 };
+export { makeRequest };
+
