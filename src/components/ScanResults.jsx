@@ -421,117 +421,38 @@ const ScanResults = ({ scanId }) => {
             
             <div className="space-y-3 mb-6">
               <div className="flex justify-between">
-                <span className="text-gray-600">Total Images:</span>
+                <span>Total Images:</span>
                 <span className="font-medium">{altTextEstimate.totalImages || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Images Without Alt Text:</span>
+                <span>Images Without Alt Text:</span>
                 <span className="font-medium">{altTextEstimate.imagesWithoutAlt || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Estimated Cost:</span>
+                <span>Estimated Cost:</span>
                 <span className="font-medium">${altTextEstimate.estimatedCost || '0.00'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Estimated Time:</span>
-                <span className="font-medium">{altTextEstimate.estimatedTime || 0} seconds</span>
+                <span>Estimated Time:</span>
+                <span className="font-medium">{altTextEstimate.estimatedTime || '0 seconds'}</span>
               </div>
             </div>
             
             <div className="flex space-x-3">
-              <button 
+              <button
                 onClick={handleCreateAltTextJob}
                 disabled={altTextLoading}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {altTextLoading ? 'Creating Job...' : 'Start Processing'}
               </button>
-              <button 
+              <button
                 onClick={() => setShowAltTextModal(false)}
                 className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Alt Text Results Modal */}
-      {showAltTextModal && altTextResults && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-semibold">Alt Text AI Results</h3>
-              <button 
-                onClick={() => setShowAltTextModal(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            
-            {altTextResults.suggestions && altTextResults.suggestions.length > 0 ? (
-              <div className="space-y-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                  <h4 className="font-medium text-green-800 mb-2">Processing Summary</h4>
-                  <p className="text-green-700">
-                    Successfully processed {altTextResults.summary?.totalProcessed || 0} images with 
-                    {altTextResults.summary?.averageConfidence ? ` ${Math.round(altTextResults.summary.averageConfidence * 100)}% average confidence` : ' high confidence'}.
-                  </p>
-                </div>
-                
-                <div className="grid gap-4">
-                  {altTextResults.suggestions.slice(0, 10).map((suggestion, idx) => (
-                    <div key={idx} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-start space-x-4">
-                        {suggestion.imageUrl && (
-                          <img 
-                            src={suggestion.imageUrl} 
-                            alt="Preview" 
-                            className="w-20 h-20 object-cover rounded-lg"
-                          />
-                        )}
-                        <div className="flex-1">
-                          <h5 className="font-medium text-gray-900 mb-2">
-                            {suggestion.selector || 'Image'}
-                          </h5>
-                          <div className="space-y-2">
-                            <div>
-                              <span className="text-sm text-gray-600">Current Alt Text:</span>
-                              <p className="text-sm text-gray-800 bg-gray-50 p-2 rounded">
-                                {suggestion.currentAltText || 'None'}
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-sm text-gray-600">AI Suggestion:</span>
-                              <p className="text-sm text-gray-800 bg-blue-50 p-2 rounded">
-                                {suggestion.suggestedAltText}
-                              </p>
-                            </div>
-                            {suggestion.confidence && (
-                              <div className="text-sm text-gray-600">
-                                Confidence: {Math.round(suggestion.confidence * 100)}%
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                
-                {altTextResults.suggestions.length > 10 && (
-                  <p className="text-sm text-gray-500 text-center">
-                    Showing first 10 of {altTextResults.suggestions.length} suggestions
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-gray-600">No alt text suggestions available.</p>
-              </div>
-            )}
           </div>
         </div>
       )}
