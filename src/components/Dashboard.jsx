@@ -14,7 +14,7 @@ import {
   Users,
   Eye
 } from 'lucide-react';
-import { dashboard, websites, scanning } from '../utils/api';
+import { dashboard, scanning } from '../utils/api';
 import WebsiteManager from './WebsiteManager';
 import ScanResults from './ScanResults';
 import AIAnalysis from './AIAnalysis';
