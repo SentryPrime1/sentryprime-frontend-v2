@@ -65,18 +65,24 @@ function Dashboard({ user, onLogout }) {
     loadDashboardData();
   };
 
-  // ✅ UPDATED: handleViewScan with console logging
+  // ✅ FIXED: Consistent routing - use 'scan-results' everywhere
   const handleViewScan = (scanId) => {
     console.log('🎯 Dashboard handleViewScan called with scanId:', scanId);
     console.log('🎯 Setting selectedScanId to:', scanId);
     setSelectedScanId(scanId);
-    setActiveTab('results');
-    console.log('🎯 Switched to results tab');
+    setActiveTab('scan-results'); // ✅ FIXED: Use consistent tab name
+    console.log('🎯 Switched to scan-results tab');
   };
 
   const handleViewAIAnalysis = (scanId) => {
     setSelectedScanId(scanId);
     setShowAIAnalysis(true);
+  };
+
+  // ✅ FIXED: Add back button handler for scan results
+  const handleBackToScanResults = () => {
+    setSelectedScanId(null);
+    setActiveTab('scan-results');
   };
 
   if (loading) {
@@ -237,92 +243,100 @@ function Dashboard({ user, onLogout }) {
           />
         )}
 
-        {/* Scan Results Tab */}
+        {/* ✅ FIXED: Scan Results Tab - Show individual scan results when selectedScanId exists */}
         {activeTab === 'scan-results' && (
           <div className="px-4 py-6 sm:px-0">
-            <div className="bg-white shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Recent Scan Results</h3>
-                {recentScans.length > 0 ? (
-                  <div className="space-y-4">
-                    {recentScans.map((scan) => (
-                      <div key={scan.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-3">
-                              <h4 className="text-sm font-medium text-gray-900">{scan.url}</h4>
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                scan.status === 'completed' || scan.status === 'done'
-                                  ? 'bg-green-100 text-green-800' 
-                                  : scan.status === 'running'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {scan.status || 'completed'}
-                              </span>
+            {selectedScanId ? (
+              // Show individual scan results
+              <div>
+                <div className="mb-4">
+                  <button
+                    onClick={handleBackToScanResults}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    ← Back to Scan Results
+                  </button>
+                </div>
+                <ScanResults 
+                  scanId={selectedScanId}
+                  onBack={handleBackToScanResults}
+                />
+              </div>
+            ) : (
+              // Show scan results list
+              <div className="bg-white shadow rounded-lg">
+                <div className="px-4 py-5 sm:p-6">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Recent Scan Results</h3>
+                  {recentScans.length > 0 ? (
+                    <div className="space-y-4">
+                      {recentScans.map((scan) => (
+                        <div key={scan.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3">
+                                <h4 className="text-sm font-medium text-gray-900">{scan.url}</h4>
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  scan.status === 'completed' || scan.status === 'done'
+                                    ? 'bg-green-100 text-green-800' 
+                                    : scan.status === 'running'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {scan.status || 'completed'}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-sm text-gray-500">
+                                <span>Compliance: {scan.compliance_score || 0}%</span>
+                                <span className="mx-2">•</span>
+                                <span>Violations: {scan.total_violations || 0}</span>
+                                <span className="mx-2">•</span>
+                                <span>Scanned: {scan.created_at ? new Date(scan.created_at).toLocaleString() : 'Unknown'}</span>
+                              </div>
                             </div>
-                            <div className="mt-1 text-sm text-gray-500">
-                              <span>Compliance: {scan.compliance_score || 0}%</span>
-                              <span className="mx-2">•</span>
-                              <span>Violations: {scan.total_violations || 0}</span>
-                              <span className="mx-2">•</span>
-                              <span>Scanned: {scan.created_at ? new Date(scan.created_at).toLocaleString() : 'Unknown'}</span>
+                            <div className="flex items-center space-x-2">
+                              {(scan.status === 'completed' || scan.status === 'done' || scan.total_violations > 0) && (
+                                <>
+                                  <button
+                                    onClick={() => handleViewScan(scan.id)}
+                                    className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                  >
+                                    <Eye className="h-4 w-4 mr-1" />
+                                    View Results
+                                  </button>
+                                  <button
+                                    onClick={() => handleViewAIAnalysis(scan.id)}
+                                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                                  >
+                                    <Brain className="h-4 w-4 mr-1" />
+                                    AI Analysis
+                                  </button>
+                                </>
+                              )}
                             </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {(scan.status === 'completed' || scan.status === 'done' || scan.total_violations > 0) && (
-                              <>
-                                <button
-                                  onClick={() => handleViewScan(scan.id)}
-                                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                >
-                                  <Eye className="h-4 w-4 mr-1" />
-                                  View Results
-                                </button>
-                                <button
-                                  onClick={() => handleViewAIAnalysis(scan.id)}
-                                  className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                                >
-                                  <Brain className="h-4 w-4 mr-1" />
-                                  AI Analysis
-                                </button>
-                              </>
-                            )}
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Scan className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No scan results yet</h3>
-                    <p className="text-gray-600 mb-4">
-                      Start scanning your websites to see detailed accessibility reports here
-                    </p>
-                    <button
-                      onClick={() => setActiveTab('websites')}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Website & Scan
-                    </button>
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Scan className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No scan results yet</h3>
+                      <p className="text-gray-600 mb-4">
+                        Start scanning your websites to see detailed accessibility reports here
+                      </p>
+                      <button
+                        onClick={() => setActiveTab('websites')}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Website & Scan
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
-        )}
-
-        {/* Scan Results Detail View */}
-        {activeTab === 'results' && selectedScanId && (
-          <ScanResults 
-            scanId={selectedScanId}
-            onBack={() => {
-              setSelectedScanId(null);
-              setActiveTab('scan-results');
-            }}
-          />
         )}
       </main>
 
