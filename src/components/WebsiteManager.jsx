@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { dashboard, websites, scanning } from '../utils/api';
+import { dashboard, scanning } from '../utils/api';
 import { Eye, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const MAX_SCAN_MINUTES = 10;
